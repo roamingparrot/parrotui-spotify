@@ -1,3 +1,7 @@
+pub mod marquee;
+
+pub use marquee::MarqueeState;
+
 use crate::api::{Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
 use crate::playback::ProgressTracker;
 
@@ -130,6 +134,10 @@ pub struct App {
 
     // gg combo state
     pub pending_g: bool,
+
+    // Marquee scroll state
+    pub sidebar_marquee: MarqueeState,
+    pub track_marquee: MarqueeState,
 }
 
 impl App {
@@ -151,6 +159,8 @@ impl App {
             repeat: RepeatMode::Off,
             device_name,
             pending_g: false,
+            sidebar_marquee: MarqueeState::new(),
+            track_marquee: MarqueeState::new(),
         }
     }
 
@@ -264,10 +274,16 @@ impl App {
     }
 
     pub fn toggle_focus(&mut self) {
-        self.focus = match self.focus {
-            FocusPanel::Sidebar => FocusPanel::Content,
-            FocusPanel::Content => FocusPanel::Sidebar,
-        };
+        match self.focus {
+            FocusPanel::Sidebar => {
+                self.sidebar_marquee.reset();
+                self.focus = FocusPanel::Content;
+            }
+            FocusPanel::Content => {
+                self.track_marquee.reset();
+                self.focus = FocusPanel::Sidebar;
+            }
+        }
     }
 
     pub fn set_sidebar_playlists(&mut self, playlists: Vec<Playlist>, total: u32) {

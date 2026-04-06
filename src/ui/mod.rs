@@ -1,12 +1,15 @@
+pub mod marquee;
 pub mod widgets;
 
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
+use unicode_width::UnicodeWidthStr;
 
 use crate::state::{App, ContentView, FocusPanel};
+use marquee::{marquee_text, truncate_unicode};
 use widgets::{help_popup, now_playing_bar, track_list};
 
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
 
     let outer = Layout::default()
@@ -36,7 +39,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 }
 
-fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_sidebar(frame: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == FocusPanel::Sidebar;
     let block = Block::default()
         .title(" Library ")
@@ -47,12 +50,14 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::DarkGray)
         });
 
+    let label_width = area.width.saturating_sub(4) as usize; // borders (2) + prefix (2)
+
     let items: Vec<Line> = app
         .sidebar_items
         .iter()
         .enumerate()
         .map(|(i, item)| {
-            let label = match item {
+            let raw_label = match item {
                 crate::state::SidebarItem::LikedSongs => "Liked Songs".to_string(),
                 crate::state::SidebarItem::Playlist(pl) => pl.name.clone(),
             };
@@ -65,6 +70,17 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             let prefix = if i == app.sidebar_cursor { "▸ " } else { "  " };
+            let label = if i == app.sidebar_cursor {
+                let text_w = UnicodeWidthStr::width(raw_label.as_str());
+                if text_w > label_width {
+                    let off = app.sidebar_marquee.tick(i, text_w, label_width);
+                    marquee_text(&raw_label, label_width, off)
+                } else {
+                    raw_label
+                }
+            } else {
+                truncate_unicode(&raw_label, label_width)
+            };
             Line::from(Span::styled(format!("{prefix}{label}"), style))
         })
         .collect();
@@ -74,7 +90,7 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(list, area);
 }
 
-fn draw_content(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == FocusPanel::Content;
     match &app.content {
         ContentView::Empty => {
@@ -104,7 +120,7 @@ fn draw_content(frame: &mut Frame, app: &App, area: Rect) {
                 return;
             }
 
-            track_list::draw(frame, tracks, *cursor, focused, block, area);
+            track_list::draw(frame, tracks, *cursor, focused, block, area, &mut app.track_marquee);
         }
 
         ContentView::LikedSongs {
@@ -124,7 +140,7 @@ fn draw_content(frame: &mut Frame, app: &App, area: Rect) {
                 return;
             }
 
-            track_list::draw(frame, tracks, *cursor, focused, block, area);
+            track_list::draw(frame, tracks, *cursor, focused, block, area, &mut app.track_marquee);
         }
     }
 }

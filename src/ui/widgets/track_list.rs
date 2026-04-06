@@ -1,7 +1,10 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Paragraph};
+use unicode_width::UnicodeWidthStr;
 
 use crate::api::Track;
+use crate::state::MarqueeState;
+use crate::ui::marquee::{marquee_text, truncate_unicode};
 
 /// Render a list of tracks inside a content block. Used by both playlist detail
 /// and liked songs views.
@@ -12,6 +15,7 @@ pub fn draw(
     focused: bool,
     block: Block<'_>,
     area: Rect,
+    marquee: &mut MarqueeState,
 ) {
     let inner = block.inner(area);
     let visible = inner.height.saturating_sub(0) as usize; // no sub-header for now
@@ -43,10 +47,22 @@ pub fn draw(
                 "  "
             };
             let dur = format_duration(track.duration_ms);
+            let name_col = if is_cursor && focused {
+                let name_w = UnicodeWidthStr::width(track.name.as_str());
+                if name_w > 38 {
+                    let off = marquee.tick(i, name_w, 38);
+                    marquee_text(&track.name, 38, off)
+                } else {
+                    truncate_unicode(&track.name, 38)
+                }
+            } else {
+                truncate_unicode(&track.name, 38)
+            };
+            let artist_col = truncate_unicode(&track.artist_names(), 28);
             let text = format!(
                 "{prefix}{:<40}  {:<30}  {dur}",
-                truncate(&track.name, 38),
-                truncate(&track.artist_names(), 28),
+                name_col,
+                artist_col,
             );
             Line::from(Span::styled(text, style))
         })
@@ -63,10 +79,3 @@ fn format_duration(ms: u64) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max.saturating_sub(1)])
-    }
-}
