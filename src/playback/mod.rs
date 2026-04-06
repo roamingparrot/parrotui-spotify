@@ -37,15 +37,8 @@ impl PlaybackEngine {
 
         let cache_dir = crate::config::cache_dir();
 
-        // Clear stale credentials from previous failed sessions.
-        // Fresh OAuth token auth will produce new ones.
-        let cred_dir = cache_dir.join("credentials");
-        if cred_dir.exists() {
-            let _ = std::fs::remove_dir_all(&cred_dir);
-        }
-
         let cache = Cache::new(
-            Some(cred_dir),
+            Some(cache_dir.join("credentials")),
             Some(cache_dir.join("volume")),
             Some(cache_dir.join("audio")),
             Some(1024 * 1024 * 50),
@@ -70,7 +63,7 @@ impl PlaybackEngine {
         let mixer_instance = mixer_fn(MixerConfig::default())
             .map_err(|e| SpotError::Playback(format!("mixer init: {e}")))?;
 
-        let vol_u16 = (config.initial_volume as u32 * 655) as u16;
+        let vol_u16 = (config.initial_volume as u32 * 65535 / 100) as u16;
         mixer_instance.set_volume(vol_u16);
 
         let player = Player::new(
@@ -87,9 +80,7 @@ impl PlaybackEngine {
             ..Default::default()
         };
 
-        // Pass the same credentials for Spirc reconnection.
-        // After session.connect(), the session holds reusable_credentials
-        // bound to the KEYMASTER client_id which Login5 can use.
+        // Spirc::new() connects the session and caches reusable credentials.
         let (spirc, spirc_task) = Spirc::new(
             connect_config,
             session.clone(),
@@ -129,7 +120,7 @@ impl PlaybackEngine {
     }
 
     pub fn set_volume(&self, percent: u8) -> Result<()> {
-        let vol = (percent.min(100) as u32 * 655) as u16;
+        let vol = (percent.min(100) as u32 * 65535 / 100) as u16;
         self.spirc.set_volume(vol).map_err(spirc_err)
     }
 

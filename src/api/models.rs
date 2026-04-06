@@ -63,7 +63,9 @@ impl RepeatMode {
 pub struct Track {
     pub name: String,
     pub uri: Option<String>,
+    #[serde(default)]
     pub duration_ms: u64,
+    #[serde(default)]
     pub artists: Vec<Artist>,
     // Deserialized from API but not displayed yet
     #[allow(dead_code)]
@@ -98,8 +100,9 @@ pub struct Playlist {
     pub id: String,
     pub name: String,
     pub uri: String,
+    #[serde(default)]
     #[allow(dead_code)]
-    pub tracks: PlaylistTracksRef,
+    pub tracks: Option<PlaylistTracksRef>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,7 +113,20 @@ pub struct PlaylistTracksRef {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PlaylistItem {
+    #[serde(default, deserialize_with = "deserialize_playlist_track")]
     pub track: Option<Track>,
+}
+
+/// Deserialize the `track` field of a playlist item, silently returning `None`
+/// for entries that don't parse as a `Track` (podcast episodes, local files, etc.).
+fn deserialize_playlist_track<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Track>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(value.and_then(|v| serde_json::from_value::<Track>(v).ok()))
 }
 
 // -- Saved tracks (liked songs) --

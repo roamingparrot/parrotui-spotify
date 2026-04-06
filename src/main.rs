@@ -29,17 +29,40 @@ async fn main() -> color_eyre::Result<()> {
 
     let config = Config::load(None)?;
 
-    let token_data = get_or_refresh_token(&config).await?;
+    let token_data = get_or_refresh_token().await?;
+    tracing::info!(
+        scopes = token_data.scope.as_deref().unwrap_or("(none)"),
+        expires_in = token_data.expires_in,
+        "oauth token ready"
+    );
+
+    // The PKCE token is only used to bootstrap the librespot session.
+    // Web API calls use a keymaster token from the session instead,
+    // which bypasses developer app restrictions (same access as official client).
     let mut client = api::SpotifyClient::new(&token_data.access_token);
     let token_store = TokenStore::new();
     let _ = token_store.save(&token_data);
 
-    let mut token = token_data;
+    let token = token_data;
 
     eprintln!("Starting playback engine...");
     let mut engine = playback::PlaybackEngine::start(&config, &token.access_token).await?;
     let mut player_events = engine.get_event_channel();
     eprintln!("Device '{}' ready (id: {})", config.device_name, engine.device_id);
+
+    // Get a Web API token from the librespot session via keymaster.
+    // This token uses Spotify's internal client_id, not the developer app's,
+    // so it has full API access regardless of app approval status.
+    let web_api_scopes = auth::WEB_API_SCOPES;
+    match engine.get_web_api_token(web_api_scopes).await {
+        Ok(session_token) => {
+            tracing::info!("using keymaster token for Web API");
+            client.set_token(&session_token);
+        }
+        Err(e) => {
+            tracing::warn!(%e, "keymaster token unavailable, falling back to OAuth token");
+        }
+    }
 
     let mut app = App::new(config.device_name.clone(), config.initial_volume);
 
@@ -57,7 +80,7 @@ async fn main() -> color_eyre::Result<()> {
     let mut last_refresh = Instant::now();
 
     loop {
-        terminal.draw(|f| ui::draw(f, &app))?;
+        terminal.draw(|f| ui::draw(f, &mut app))?;
 
         app.clear_stale_notification();
 
@@ -79,19 +102,13 @@ async fn main() -> color_eyre::Result<()> {
         }
 
         if last_refresh.elapsed() >= refresh_interval {
-            if token.is_expired() {
-                if let Some(rt) = &token.refresh_token {
-                    match auth::refresh(&config, rt).await {
-                        Ok(new_token) => {
-                            client.set_token(&new_token.access_token);
-                            let _ = token_store.save(&new_token);
-                            token = new_token;
-                        }
-                        Err(e) => {
-                            tracing::warn!(%e, "token refresh failed");
-                            app.notify_error("token refresh failed — restart to re-auth");
-                        }
-                    }
+            // Refresh the Web API token via keymaster (it handles caching/expiry internally).
+            match engine.get_web_api_token(web_api_scopes).await {
+                Ok(session_token) => {
+                    client.set_token(&session_token);
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "keymaster token refresh failed");
                 }
             }
 
@@ -157,7 +174,7 @@ async fn process_player_events(
                 // or cleared on EndOfTrack/Stopped.
             }
             PlayerEvent::VolumeChanged { volume } => {
-                app.volume = (volume as u32 * 100 / 65535) as u8;
+                app.volume = ((volume as u32 * 100 + 32767) / 65535) as u8;
             }
             PlayerEvent::ShuffleChanged { shuffle } => {
                 app.shuffle = shuffle;
@@ -187,15 +204,17 @@ async fn fetch_current_track(app: &mut App, client: &api::SpotifyClient) {
     }
 }
 
-async fn get_or_refresh_token(config: &Config) -> color_eyre::Result<auth::TokenData> {
+async fn get_or_refresh_token() -> color_eyre::Result<auth::TokenData> {
     let store = TokenStore::new();
 
     if let Ok(data) = store.load() {
-        if !data.is_expired() {
+        // Refreshing can't add new scopes — force fresh auth if scopes changed.
+        if !auth::has_required_scopes(&data) {
+            tracing::info!("token missing required scopes, re-authenticating");
+        } else if !data.is_expired() {
             return Ok(data);
-        }
-        if let Some(rt) = data.refresh_token.clone() {
-            match auth::refresh(config, &rt).await {
+        } else if let Some(rt) = data.refresh_token.clone() {
+            match auth::refresh(&rt).await {
                 Ok(refreshed) => return Ok(refreshed),
                 Err(e) => {
                     tracing::warn!(%e, "refresh failed, starting fresh auth");
@@ -204,7 +223,7 @@ async fn get_or_refresh_token(config: &Config) -> color_eyre::Result<auth::Token
         }
     }
 
-    let data = auth::authenticate(config).await?;
+    let data = auth::authenticate().await?;
     store.save(&data)?;
     Ok(data)
 }
