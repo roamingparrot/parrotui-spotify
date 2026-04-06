@@ -29,8 +29,7 @@ impl PlaybackEngine {
     pub async fn start(config: &Config, access_token: &str) -> Result<Self> {
         let device_id = device_id_from_name(&config.device_name);
 
-        // Use default SessionConfig — the AP protocol requires Spotify's
-        // internal KEYMASTER client_id, not our developer app's client_id.
+        // Use default SessionConfig — uses Spotify's internal KEYMASTER client_id.
         let session_config = SessionConfig {
             device_id: device_id.clone(),
             ..Default::default()
@@ -158,9 +157,17 @@ impl PlaybackEngine {
         let _ = self.spirc.shutdown();
     }
 
-    #[allow(dead_code)]
-    pub fn session(&self) -> &Session {
-        &self.session
+    /// Get a Web API access token from the librespot session via keymaster.
+    /// This bypasses developer app restrictions since it uses Spotify's
+    /// internal client_id, giving the same access as the official client.
+    pub async fn get_web_api_token(&self, scopes: &str) -> Result<String> {
+        let token = self
+            .session
+            .token_provider()
+            .get_token(scopes)
+            .await
+            .map_err(|e| SpotError::Session(format!("keymaster token: {e}")))?;
+        Ok(token.access_token)
     }
 }
 
