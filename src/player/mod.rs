@@ -148,19 +148,24 @@ async fn load_playlists(app: &mut App, client: &SpotifyClient) -> Result<()> {
     let mut playlists = page.items;
 
     // Sort by recently played — best-effort; API failure just keeps default order
-    if let Ok(recent) = client.recently_played(50).await {
-        let mut order: Vec<String> = Vec::new();
-        for item in &recent.items {
-            if let Some(ctx) = &item.context {
-                if ctx.context_type == "playlist" && !order.contains(&ctx.uri) {
-                    order.push(ctx.uri.clone());
+    match client.recently_played(50).await {
+        Ok(recent) => {
+            let mut order: Vec<String> = Vec::new();
+            for item in &recent.items {
+                if let Some(ctx) = &item.context {
+                    if ctx.context_type == "playlist" && !order.contains(&ctx.uri) {
+                        order.push(ctx.uri.clone());
+                    }
                 }
             }
+            playlists.sort_by_key(|pl| match order.iter().position(|uri| *uri == pl.uri) {
+                Some(pos) => (0, pos),
+                None => (1, 0),
+            });
         }
-        playlists.sort_by_key(|pl| match order.iter().position(|uri| *uri == pl.uri) {
-            Some(pos) => (0, pos),
-            None => (1, 0),
-        });
+        Err(e) => {
+            tracing::debug!(%e, "recently_played unavailable, using default order");
+        }
     }
 
     app.set_sidebar_playlists(playlists, total);
