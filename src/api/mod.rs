@@ -2,9 +2,31 @@ mod models;
 
 pub use models::*;
 
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+use tokio::sync::Mutex;
+
 use crate::error::{Result, SpotError};
 
 const BASE: &str = "https://api.spotify.com/v1";
+const MAX_ATTEMPTS: u8 = 4;
+
+// Rate-limit pacing: enforce minimum interval between API calls.
+static API_PACING: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+const MIN_INTERVAL: Duration = Duration::from_millis(250);
+
+async fn pace() {
+    let lock = API_PACING.get_or_init(|| Mutex::new(None));
+    let mut last = lock.lock().await;
+    if let Some(prev) = *last {
+        let elapsed = prev.elapsed();
+        if elapsed < MIN_INTERVAL {
+            tokio::time::sleep(MIN_INTERVAL - elapsed).await;
+        }
+    }
+    *last = Some(Instant::now());
+}
 
 pub struct SpotifyClient {
     http: reqwest::Client,
@@ -23,28 +45,147 @@ impl SpotifyClient {
         self.token = token.to_string();
     }
 
+    // -- Core request method with pacing + retry --
+
+    async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
+        let mut attempt: u8 = 0;
+        loop {
+            pace().await;
+            let resp = match self.http.get(url).bearer_auth(&self.token).send().await {
+                Ok(r) => r,
+                Err(e) if attempt + 1 < MAX_ATTEMPTS && is_transient(&e) => {
+                    let backoff = 1 + u64::from(attempt);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let status = resp.status().as_u16();
+            if resp.status().is_success() {
+                return Ok(resp.json().await?);
+            }
+            if status == 429 && attempt + 1 < MAX_ATTEMPTS {
+                let retry = retry_after(&resp);
+                let backoff = retry.max(1) + u64::from(attempt);
+                tracing::warn!(%url, backoff, "rate limited, backing off");
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+                attempt += 1;
+                continue;
+            }
+            if status == 429 {
+                return Err(SpotError::RateLimited {
+                    retry_after_secs: retry_after(&resp),
+                });
+            }
+            let body = resp.text().await.unwrap_or_default();
+            return Err(SpotError::Api {
+                status,
+                message: body,
+            });
+        }
+    }
+
+    async fn get_json_optional<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+    ) -> Result<Option<T>> {
+        let mut attempt: u8 = 0;
+        loop {
+            pace().await;
+            let resp = match self.http.get(url).bearer_auth(&self.token).send().await {
+                Ok(r) => r,
+                Err(e) if attempt + 1 < MAX_ATTEMPTS && is_transient(&e) => {
+                    let backoff = 1 + u64::from(attempt);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let status = resp.status().as_u16();
+            if status == 204 {
+                return Ok(None);
+            }
+            if resp.status().is_success() {
+                return Ok(Some(resp.json().await?));
+            }
+            if status == 429 && attempt + 1 < MAX_ATTEMPTS {
+                let retry = retry_after(&resp);
+                let backoff = retry.max(1) + u64::from(attempt);
+                tracing::warn!(%url, backoff, "rate limited, backing off");
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+                attempt += 1;
+                continue;
+            }
+            if status == 429 {
+                return Err(SpotError::RateLimited {
+                    retry_after_secs: retry_after(&resp),
+                });
+            }
+            let body = resp.text().await.unwrap_or_default();
+            return Err(SpotError::Api {
+                status,
+                message: body,
+            });
+        }
+    }
+
+    async fn put_json(&self, url: &str, body: &serde_json::Value) -> Result<()> {
+        let mut attempt: u8 = 0;
+        loop {
+            pace().await;
+            let resp = match self
+                .http
+                .put(url)
+                .bearer_auth(&self.token)
+                .json(body)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) if attempt + 1 < MAX_ATTEMPTS && is_transient(&e) => {
+                    let backoff = 1 + u64::from(attempt);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let status = resp.status().as_u16();
+            if resp.status().is_success() || status == 204 {
+                return Ok(());
+            }
+            if status == 429 && attempt + 1 < MAX_ATTEMPTS {
+                let retry = retry_after(&resp);
+                let backoff = retry.max(1) + u64::from(attempt);
+                tracing::warn!(%url, backoff, "rate limited, backing off");
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+                attempt += 1;
+                continue;
+            }
+            if status == 429 {
+                return Err(SpotError::RateLimited {
+                    retry_after_secs: retry_after(&resp),
+                });
+            }
+            let body = resp.text().await.unwrap_or_default();
+            return Err(SpotError::Api {
+                status,
+                message: body,
+            });
+        }
+    }
+
     // -- Playback state (read-only, used for metadata sync) --
 
     pub async fn current_playback(&self) -> Result<Option<PlaybackState>> {
         let url = format!("{BASE}/me/player");
         tracing::debug!(%url, "GET playback state");
-        let resp = self
-            .http
-            .get(&url)
-            .bearer_auth(&self.token)
-            .send()
-            .await?;
-        if resp.status().as_u16() == 204 {
-            return Ok(None);
-        }
-        self.check_status_ref(&resp, &url)?;
-        match resp.json().await {
-            Ok(state) => Ok(Some(state)),
-            Err(e) => {
-                tracing::debug!(%e, "could not decode playback state");
-                Ok(None)
-            }
-        }
+        self.get_json_optional(&url).await
     }
 
     // -- Start playback on a specific device (targets our Spirc device) --
@@ -68,14 +209,7 @@ impl SpotifyClient {
             url.push_str(&format!("?device_id={device_id}"));
         }
         tracing::debug!(%url, %context_uri, "PUT play context");
-        let resp = self
-            .http
-            .put(&url)
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
-            .await?;
-        self.check_status_owned(resp, &url).await
+        self.put_json(&url, &body).await
     }
 
     pub async fn play_tracks_on(
@@ -97,14 +231,7 @@ impl SpotifyClient {
             url.push_str(&format!("?device_id={device_id}"));
         }
         tracing::debug!(%url, track_count = uris.len(), "PUT play tracks");
-        let resp = self
-            .http
-            .put(&url)
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
-            .await?;
-        self.check_status_owned(resp, &url).await
+        self.put_json(&url, &body).await
     }
 
     // -- Playlists --
@@ -112,13 +239,7 @@ impl SpotifyClient {
     pub async fn my_playlists(&self, limit: u32, offset: u32) -> Result<Page<Playlist>> {
         let url = format!("{BASE}/me/playlists?limit={limit}&offset={offset}");
         tracing::debug!(%url, "GET my playlists");
-        let resp = self.http.get(&url).bearer_auth(&self.token).send().await?;
-        self.check_status_ref(&resp, &url)?;
-        let body = resp.text().await?;
-        serde_json::from_str(&body).map_err(|e| {
-            tracing::error!(%e, %body, "failed to parse playlists response");
-            e.into()
-        })
+        self.get_json(&url).await
     }
 
     pub async fn playlist_tracks(
@@ -129,27 +250,7 @@ impl SpotifyClient {
     ) -> Result<Page<PlaylistItem>> {
         let url = format!("{BASE}/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}");
         tracing::debug!(%url, %playlist_id, "GET playlist tracks");
-        let resp = self.http.get(&url).bearer_auth(&self.token).send().await?;
-        let status = resp.status();
-        let body = resp.text().await?;
-        if status.as_u16() == 429 {
-            tracing::warn!(%url, "rate limited");
-            return Err(SpotError::RateLimited {
-                retry_after_secs: 1,
-            });
-        }
-        if !status.is_success() {
-            tracing::warn!(%url, status = status.as_u16(), %body, "playlist tracks request failed");
-            return Err(SpotError::Api {
-                status: status.as_u16(),
-                message: body,
-            });
-        }
-        tracing::debug!(%url, bytes = body.len(), "playlist tracks response OK");
-        serde_json::from_str(&body).map_err(|e| {
-            tracing::error!(%e, %body, "failed to parse playlist tracks response");
-            e.into()
-        })
+        self.get_json(&url).await
     }
 
     // -- Recently played --
@@ -157,9 +258,7 @@ impl SpotifyClient {
     pub async fn recently_played(&self, limit: u32) -> Result<CursorPage<PlayHistory>> {
         let url = format!("{BASE}/me/player/recently-played?limit={limit}");
         tracing::debug!(%url, "GET recently played");
-        let resp = self.http.get(&url).bearer_auth(&self.token).send().await?;
-        self.check_status_ref(&resp, &url)?;
-        Ok(resp.json().await?)
+        self.get_json(&url).await
     }
 
     // -- Library --
@@ -167,49 +266,18 @@ impl SpotifyClient {
     pub async fn liked_tracks(&self, limit: u32, offset: u32) -> Result<Page<SavedTrack>> {
         let url = format!("{BASE}/me/tracks?limit={limit}&offset={offset}");
         tracing::debug!(%url, "GET liked tracks");
-        let resp = self.http.get(&url).bearer_auth(&self.token).send().await?;
-        self.check_status_ref(&resp, &url)?;
-        Ok(resp.json().await?)
+        self.get_json(&url).await
     }
+}
 
-    // -- Internals --
+fn retry_after(resp: &reqwest::Response) -> u64 {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3)
+}
 
-    /// Check HTTP status on a borrowed response (body not yet consumed).
-    fn check_status_ref(&self, resp: &reqwest::Response, url: &str) -> Result<()> {
-        let status = resp.status().as_u16();
-        if status == 429 {
-            tracing::warn!(%url, "rate limited");
-            return Err(SpotError::RateLimited {
-                retry_after_secs: 1,
-            });
-        }
-        if !resp.status().is_success() && status != 204 {
-            tracing::warn!(%url, %status, "request failed (body not yet read)");
-            return Err(SpotError::Api {
-                status,
-                message: format!("{url} → HTTP {status}"),
-            });
-        }
-        Ok(())
-    }
-
-    /// Check HTTP status on an owned response, reading the body on error.
-    async fn check_status_owned(&self, resp: reqwest::Response, url: &str) -> Result<()> {
-        let status = resp.status().as_u16();
-        if status == 429 {
-            tracing::warn!(%url, "rate limited");
-            return Err(SpotError::RateLimited {
-                retry_after_secs: 1,
-            });
-        }
-        if !resp.status().is_success() && status != 204 {
-            let body = resp.text().await.unwrap_or_default();
-            tracing::warn!(%url, %status, %body, "request failed");
-            return Err(SpotError::Api {
-                status,
-                message: format!("{url} → {body}"),
-            });
-        }
-        Ok(())
-    }
+fn is_transient(e: &reqwest::Error) -> bool {
+    e.is_connect() || e.is_timeout() || e.is_request()
 }

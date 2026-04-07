@@ -67,8 +67,6 @@ pub struct Track {
     pub duration_ms: u64,
     #[serde(default)]
     pub artists: Vec<Artist>,
-    // Deserialized from API but not displayed yet
-    #[allow(dead_code)]
     pub album: Option<Album>,
 }
 
@@ -89,7 +87,6 @@ pub struct Artist {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Album {
-    #[allow(dead_code)]
     pub name: String,
 }
 

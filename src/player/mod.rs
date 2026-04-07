@@ -1,5 +1,5 @@
 use crate::api::SpotifyClient;
-use crate::error::Result;
+use crate::error::{Result, SpotError};
 use crate::playback::PlaybackEngine;
 use crate::state::{App, ContentView, FocusPanel, Notification, SidebarItem};
 
@@ -59,6 +59,10 @@ pub async fn handle_action(
 
     if let Err(e) = result {
         tracing::warn!(%e, "action failed");
+        if let SpotError::RateLimited { retry_after_secs } = &e {
+            let backoff = std::time::Duration::from_secs(*retry_after_secs);
+            app.rate_limited_until = Some(std::time::Instant::now() + backoff);
+        }
         app.notify_error(e);
     }
 }
@@ -126,7 +130,8 @@ async fn refresh_playback(app: &mut App, client: &SpotifyClient) -> Result<()> {
         app.shuffle = pb.shuffle_state.unwrap_or(false);
         app.repeat = pb.repeat_mode();
         if let Some(dev) = &pb.device {
-            app.volume = dev.volume_percent.unwrap_or(app.volume);
+            let v = dev.volume_percent.unwrap_or(app.volume);
+            app.volume = ((v + 2) / 5 * 5).min(100);
         }
         // Update now-playing from API if we don't have local track info
         if app.now_playing_track.is_none() {
