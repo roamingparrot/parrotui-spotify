@@ -14,43 +14,56 @@ use librespot_playback::config::{AudioFormat, PlayerConfig};
 use librespot_playback::mixer::{self, MixerConfig};
 use librespot_playback::player::{Player, PlayerEventChannel};
 
+use crate::auth::STREAMING_CLIENT_ID;
 use crate::config::Config;
 use crate::error::{Result, SpotError};
+
+/// Redirect URI registered for the streaming client_id (spotify-player's).
+const STREAMING_REDIRECT_URI: &str = "http://127.0.0.1:8989/login";
+
+/// OAuth scopes required for streaming.
+const STREAMING_SCOPES: [&str; 6] = [
+    "streaming",
+    "user-read-playback-state",
+    "user-modify-playback-state",
+    "user-read-currently-playing",
+    "user-library-read",
+    "user-read-private",
+];
 
 pub struct PlaybackEngine {
     spirc: Spirc,
     player: Arc<Player>,
-    #[allow(dead_code)]
-    session: Session,
     pub device_id: String,
 }
 
 impl PlaybackEngine {
-    pub async fn start(config: &Config, access_token: &str) -> Result<Self> {
+    pub async fn start(config: &Config) -> Result<Self> {
         let device_id = device_id_from_name(&config.device_name);
 
-        // Use default SessionConfig — uses Spotify's internal KEYMASTER client_id.
         let session_config = SessionConfig {
             device_id: device_id.clone(),
+            client_id: STREAMING_CLIENT_ID.to_string(),
             ..Default::default()
         };
 
         let cache_dir = crate::config::cache_dir();
+        let cred_cache_dir = cache_dir.join("credentials");
 
+        let volume_dir = cache_dir.join("volume");
+        let audio_dir = cache_dir.join("audio");
         let cache = Cache::new(
-            Some(cache_dir.join("credentials")),
-            Some(cache_dir.join("volume")),
-            Some(cache_dir.join("audio")),
+            Some(&cred_cache_dir),
+            Some(&volume_dir),
+            Some(&audio_dir),
             Some(1024 * 1024 * 50),
         )
         .map_err(|e| SpotError::Session(format!("cache init: {e}")))?;
 
-        let session = Session::new(session_config, Some(cache));
-        let credentials = Credentials::with_access_token(access_token);
+        // Resolve streaming credentials: try cache first, then browser OAuth.
+        let credentials = resolve_streaming_credentials(&cache, &cred_cache_dir)?;
 
-        // Don't call session.connect() here — Spirc::new() does it internally
-        // after registering its message listeners. Calling it twice would fail
-        // because the connection channel is a OnceLock.
+        let session = Session::new(session_config, Some(cache));
 
         let player_config = PlayerConfig::default();
         let audio_format = AudioFormat::default();
@@ -98,7 +111,6 @@ impl PlaybackEngine {
         Ok(Self {
             spirc,
             player,
-            session,
             device_id,
         })
     }
@@ -147,19 +159,46 @@ impl PlaybackEngine {
     pub fn shutdown(self) {
         let _ = self.spirc.shutdown();
     }
+}
 
-    /// Get a Web API access token from the librespot session via keymaster.
-    /// This bypasses developer app restrictions since it uses Spotify's
-    /// internal client_id, giving the same access as the official client.
-    pub async fn get_web_api_token(&self, scopes: &str) -> Result<String> {
-        let token = self
-            .session
-            .token_provider()
-            .get_token(scopes)
-            .await
-            .map_err(|e| SpotError::Session(format!("keymaster token: {e}")))?;
-        Ok(token.access_token)
+/// Get streaming credentials: use librespot cache first, then browser OAuth.
+fn resolve_streaming_credentials(
+    cache: &Cache,
+    cred_cache_dir: &std::path::Path,
+) -> Result<Credentials> {
+    if let Some(cached) = cache.credentials() {
+        tracing::info!("using cached streaming credentials");
+        return Ok(cached);
     }
+
+    tracing::info!("no cached streaming credentials, opening browser OAuth");
+    request_streaming_oauth(cred_cache_dir)
+}
+
+/// Run librespot-oauth to get streaming credentials via browser.
+fn request_streaming_oauth(cred_cache_dir: &std::path::Path) -> Result<Credentials> {
+    eprintln!("Streaming authentication required — opening browser...");
+
+    let client = librespot_oauth::OAuthClientBuilder::new(
+        STREAMING_CLIENT_ID,
+        STREAMING_REDIRECT_URI,
+        STREAMING_SCOPES.to_vec(),
+    )
+    .open_in_browser()
+    .build()
+    .map_err(|e| SpotError::Session(format!("oauth client build: {e:?}")))?;
+
+    let token = client
+        .get_access_token()
+        .map_err(|e| SpotError::Session(format!("streaming oauth failed: {e:?}")))?;
+
+    // Clear stale cached credentials so librespot caches the fresh ones on connect.
+    let cred_file = cred_cache_dir.join("credentials.json");
+    if cred_file.exists() {
+        let _ = std::fs::remove_file(&cred_file);
+    }
+
+    Ok(Credentials::with_access_token(token.access_token))
 }
 
 fn spirc_err(e: librespot_core::Error) -> SpotError {
