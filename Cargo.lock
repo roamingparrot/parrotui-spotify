@@ -2915,6 +2915,7 @@ dependencies = [
  "librespot-connect",
  "librespot-core",
  "librespot-metadata",
+ "librespot-oauth",
  "librespot-playback",
  "open",
  "rand 0.8.5",
