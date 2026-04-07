@@ -4,6 +4,7 @@ pub use marquee::MarqueeState;
 
 use crate::api::{Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
 use crate::playback::ProgressTracker;
+use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusPanel {
@@ -137,11 +138,16 @@ pub struct App {
 
     // Marquee scroll state
     pub sidebar_marquee: MarqueeState,
-    pub track_marquee: MarqueeState,
+
+    // Rate-limit backoff — skip API calls until this instant
+    pub rate_limited_until: Option<std::time::Instant>,
+
+    // Theme
+    pub theme: Theme,
 }
 
 impl App {
-    pub fn new(device_name: String, initial_volume: u8) -> Self {
+    pub fn new(device_name: String, initial_volume: u8, theme: Theme) -> Self {
         Self {
             running: true,
             focus: FocusPanel::Sidebar,
@@ -160,7 +166,8 @@ impl App {
             device_name,
             pending_g: false,
             sidebar_marquee: MarqueeState::new(),
-            track_marquee: MarqueeState::new(),
+            rate_limited_until: None,
+            theme,
         }
     }
 
@@ -280,7 +287,6 @@ impl App {
                 self.focus = FocusPanel::Content;
             }
             FocusPanel::Content => {
-                self.track_marquee.reset();
                 self.focus = FocusPanel::Sidebar;
             }
         }

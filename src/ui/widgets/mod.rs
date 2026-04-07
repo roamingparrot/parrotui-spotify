@@ -1,3 +1,5 @@
 pub mod help_popup;
-pub mod now_playing_bar;
-pub mod track_list;
+pub mod playbar;
+pub mod sidebar;
+pub mod status_line;
+pub mod track_table;

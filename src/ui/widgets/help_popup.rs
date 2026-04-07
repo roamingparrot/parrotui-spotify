@@ -1,75 +1,62 @@
-use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::layout::Constraint;
+use ratatui::style::{Modifier, Style};
+use ratatui::widgets::{Block, BorderType, Borders, Cell, Clear, Row, Table};
+use ratatui::Frame;
+use ratatui::layout::Rect;
 
-pub fn draw(frame: &mut Frame, area: Rect) {
+use crate::ui::theme::Theme;
+use crate::ui::util::centered_rect;
+
+const BINDINGS: &[(&str, &str)] = &[
+    ("j / ↓", "Move down"),
+    ("k / ↑", "Move up"),
+    ("g g", "Jump to top"),
+    ("G", "Jump to bottom"),
+    ("l / → / Enter", "Select / expand"),
+    ("h / ← / Esc", "Go back"),
+    ("Tab", "Switch panel"),
+    ("", ""),
+    ("Space", "Play / pause"),
+    ("n", "Next track"),
+    ("p", "Previous track"),
+    ("+ / =", "Volume up"),
+    ("- ", "Volume down"),
+    ("> / .", "Seek forward"),
+    ("< / ,", "Seek backward"),
+    ("s", "Toggle shuffle"),
+    ("r", "Cycle repeat"),
+    ("", ""),
+    ("?", "Toggle help"),
+    ("q", "Quit"),
+];
+
+pub fn draw(frame: &mut Frame, area: Rect, theme: &Theme) {
     let popup = centered_rect(60, 70, area);
-
     frame.render_widget(Clear, popup);
 
     let block = Block::default()
         .title(" Keybindings ")
+        .title_style(Style::default().fg(theme.active).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.active));
 
-    let text = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            " Navigation",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("   j/↓       Move down"),
-        Line::from("   k/↑       Move up"),
-        Line::from("   gg        Jump to top"),
-        Line::from("   G         Jump to bottom"),
-        Line::from("   l/→/Enter Select / expand"),
-        Line::from("   h/←       Go back"),
-        Line::from("   Tab       Switch panel"),
-        Line::from("   Esc       Back to sidebar"),
-        Line::from(""),
-        Line::from(Span::styled(
-            " Playback",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("   Space     Play / pause"),
-        Line::from("   n         Next track"),
-        Line::from("   p         Previous track"),
-        Line::from("   +/-       Volume up/down"),
-        Line::from("   >/<       Seek forward/back"),
-        Line::from("   s         Toggle shuffle"),
-        Line::from("   r         Cycle repeat"),
-        Line::from(""),
-        Line::from(Span::styled(
-            " General",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("   ?         Toggle this help"),
-        Line::from("   q         Quit"),
-        Line::from(""),
-    ];
+    let rows: Vec<Row> = BINDINGS
+        .iter()
+        .map(|(key, desc)| {
+            Row::new(vec![
+                Cell::from(*key).style(
+                    Style::default()
+                        .fg(theme.selected)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Cell::from(*desc).style(Style::default().fg(theme.text)),
+            ])
+        })
+        .collect();
 
-    let help = Paragraph::new(text)
-        .block(block)
-        .wrap(Wrap { trim: false });
+    let widths = [Constraint::Length(16), Constraint::Min(0)];
+    let table = Table::new(rows, widths).block(block);
 
-    frame.render_widget(help, popup);
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let vert = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(vert[1])[1]
+    frame.render_widget(table, popup);
 }

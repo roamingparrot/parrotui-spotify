@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::error::{Result, SpotError};
 
-const DEFAULT_TICK_RATE_MS: u64 = 250;
+const DEFAULT_TICK_RATE_MS: u64 = 100;
 const DEFAULT_REFRESH_INTERVAL_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +16,8 @@ pub struct Config {
     pub device_name: String,
     #[serde(default = "default_initial_volume")]
     pub initial_volume: u8,
+    #[serde(default)]
+    pub theme: String,
 }
 
 fn default_tick_rate() -> u64 {
@@ -48,6 +50,7 @@ impl Config {
             refresh_interval_secs: DEFAULT_REFRESH_INTERVAL_SECS,
             device_name: default_device_name(),
             initial_volume: default_initial_volume(),
+            theme: String::new(),
         };
 
         if let Some(dir) = path.parent() {
