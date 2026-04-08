@@ -28,6 +28,7 @@ async fn pace() {
     *last = Some(Instant::now());
 }
 
+#[derive(Clone)]
 pub struct SpotifyClient {
     http: reqwest::Client,
     token: String,
