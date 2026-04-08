@@ -43,7 +43,6 @@ pub fn draw(
         Cell::from(" #"),
         Cell::from("Title"),
         Cell::from("Artist"),
-        Cell::from("Album"),
         Cell::from("Time"),
     ])
     .style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD))
@@ -62,12 +61,6 @@ pub fn draw(
                 format!("{}", i + 1)
             };
 
-            let album = track
-                .album
-                .as_ref()
-                .map(|a| a.name.as_str())
-                .unwrap_or("");
-
             let dur = millis_to_minutes(track.duration_ms);
 
             let style = if is_playing {
@@ -82,7 +75,6 @@ pub fn draw(
                 Cell::from(Span::styled(format!(" {num}"), style)),
                 Cell::from(Span::styled(track.name.clone(), style)),
                 Cell::from(Span::styled(track.artist_names(), style)),
-                Cell::from(Span::styled(album.to_string(), style)),
                 Cell::from(Span::styled(dur, style)),
             ])
         })
@@ -90,9 +82,8 @@ pub fn draw(
 
     let widths = [
         Constraint::Length(4),
-        Constraint::Percentage(35),
-        Constraint::Percentage(25),
-        Constraint::Percentage(27),
+        Constraint::Percentage(45),
+        Constraint::Percentage(40),
         Constraint::Length(6),
     ];
 

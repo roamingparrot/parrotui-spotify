@@ -196,14 +196,6 @@ impl App {
         }
     }
 
-    pub fn is_playing(&self) -> bool {
-        self.progress.is_playing()
-    }
-
-    pub fn now_playing(&self) -> Option<&Track> {
-        self.now_playing_track.as_ref()
-    }
-
     /// Look up a track by Spotify URI in the currently-displayed playlist or liked songs.
     pub fn find_track_by_uri(&self, uri: &str) -> Option<Track> {
         let tracks = match &self.content {
@@ -212,10 +204,6 @@ impl App {
             ContentView::LikedSongs { tracks, .. } => tracks,
         };
         tracks.iter().find(|t| t.uri.as_deref() == Some(uri)).cloned()
-    }
-
-    pub fn progress_ms(&self) -> u64 {
-        self.progress.position_ms()
     }
 
     // -- Cursor movement --

@@ -48,13 +48,6 @@ impl RepeatMode {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Context => "all",
-            Self::Track => "one",
-        }
-    }
 }
 
 // -- Track --
@@ -67,7 +60,6 @@ pub struct Track {
     pub duration_ms: u64,
     #[serde(default)]
     pub artists: Vec<Artist>,
-    pub album: Option<Album>,
 }
 
 impl Track {
@@ -82,11 +74,6 @@ impl Track {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Artist {
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Album {
     pub name: String,
 }
 
