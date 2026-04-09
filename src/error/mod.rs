@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SpotError {
-    #[error("not authenticated — run spotatui to start OAuth flow")]
+    #[error("not authenticated — run parrotui-spotify to start OAuth flow")]
     NotAuthenticated,
 
     #[error("token expired and refresh failed: {0}")]

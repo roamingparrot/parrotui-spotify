@@ -27,7 +27,7 @@ fn default_refresh_interval() -> u64 {
     DEFAULT_REFRESH_INTERVAL_SECS
 }
 fn default_device_name() -> String {
-    "spotatui".to_string()
+    "parrotui-spotify".to_string()
 }
 fn default_initial_volume() -> u8 {
     100
@@ -72,7 +72,7 @@ impl Config {
 pub fn config_dir() -> PathBuf {
     dirs::config_dir()
         .expect("no XDG config dir")
-        .join("spotatui")
+        .join("parrotui-spotify")
 }
 
 pub fn config_path() -> PathBuf {
@@ -82,7 +82,7 @@ pub fn config_path() -> PathBuf {
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
         .expect("no XDG cache dir")
-        .join("spotatui")
+        .join("parrotui-spotify")
 }
 
 pub fn token_cache_path() -> PathBuf {

@@ -40,7 +40,7 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Default cyan theme — matches the original spotatui default.
+    /// Default cyan theme.
     pub fn cyan() -> Self {
         Theme {
             active: Color::Rgb(0, 180, 180),

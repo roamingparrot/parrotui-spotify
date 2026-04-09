@@ -264,9 +264,9 @@ fn init_logging() {
     let log_dir = config::cache_dir();
     let _ = std::fs::create_dir_all(&log_dir);
 
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "spotatui.log");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "parrotui-spotify.log");
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("spotatui=debug,warn"));
+        .unwrap_or_else(|_| EnvFilter::new("parrotui_spotify=debug,warn"));
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)

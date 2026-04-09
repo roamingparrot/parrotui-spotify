@@ -1,5 +1,5 @@
 {
-  description = "spotatui — keyboard-driven Spotify TUI with built-in playback";
+  description = "parrotui-spotify — keyboard-driven Spotify TUI with built-in playback";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -38,7 +38,7 @@
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "spotatui";
+          pname = "parrotui-spotify";
           version = "0.2.0";
           src = ./.;
           cargoLock = {

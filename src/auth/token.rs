@@ -39,7 +39,7 @@ pub struct TokenStore {
 impl TokenStore {
     pub fn new() -> Self {
         Self {
-            service: "spotatui".into(),
+            service: "parrotui-spotify".into(),
         }
     }
 

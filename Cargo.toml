@@ -1,11 +1,11 @@
 [package]
-name = "spotatui"
+name = "parrotui-spotify"
 version = "0.2.0"
-edition = "2021"
-authors = ["spotatui contributors"]
+edition = "2024"
+authors = ["parrotui contributors"]
 description = "A keyboard-driven Spotify client for the terminal"
 license = "MIT"
-repository = "https://github.com/spotatui/spotatui"
+repository = "https://github.com/roamingparrot/parrotui-spotify"
 readme = "README.md"
 keywords = ["spotify", "tui", "terminal", "music"]
 categories = ["command-line-utilities"]
