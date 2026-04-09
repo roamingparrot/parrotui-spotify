@@ -44,7 +44,7 @@ async fn main() -> color_eyre::Result<()> {
     // Streaming engine — uses separate credentials (spotify-player's client_id
     // via librespot-oauth, cached after first auth).
     eprintln!("Starting playback engine...");
-    let mut engine = playback::PlaybackEngine::start(&config).await?;
+    let engine = playback::PlaybackEngine::start(&config).await?;
     let mut player_events = engine.get_event_channel();
     eprintln!(
         "Device '{}' ready (id: {})",
@@ -54,14 +54,31 @@ async fn main() -> color_eyre::Result<()> {
     let theme = ui::theme::Theme::from_name(&config.theme);
     let mut app = App::new(config.device_name.clone(), config.initial_volume, theme);
 
+    // Channel for async action results.
+    let (action_tx, mut action_rx) =
+        tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();
+
+    // Fire initial data loads (non-blocking — results arrive via channel).
+    player::dispatch_async(
+        Action::LoadPlaylists,
+        &app,
+        client.clone(),
+        engine.device_id.clone(),
+        action_tx.clone(),
+    );
+    player::dispatch_async(
+        Action::RefreshPlayback,
+        &app,
+        client.clone(),
+        engine.device_id.clone(),
+        action_tx.clone(),
+    );
+
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-
-    player::handle_action(Action::LoadPlaylists, &mut app, &client, &mut engine).await;
-    player::handle_action(Action::RefreshPlayback, &mut app, &client, &mut engine).await;
 
     let tick_rate = config.tick_rate();
     let refresh_interval = Duration::from_secs(config.refresh_interval_secs);
@@ -74,7 +91,13 @@ async fn main() -> color_eyre::Result<()> {
 
         process_player_events(&mut app, &mut player_events);
 
-        // Drain all queued input events so rapid keypresses aren't dropped.
+        // Drain async action results (non-blocking).
+        while let Ok(result) = action_rx.try_recv() {
+            player::apply_result(&mut app, result);
+        }
+
+        // Drain all queued input events — sync actions run inline, async ones
+        // are spawned as background tasks via the channel.
         let mut had_input = false;
         while event::poll(Duration::ZERO)? {
             if let Event::Key(key) = event::read()? {
@@ -83,7 +106,17 @@ async fn main() -> color_eyre::Result<()> {
                 }
                 had_input = true;
                 if let Some(action) = input::handle_key(&mut app, key) {
-                    player::handle_action(action, &mut app, &client, &mut engine).await;
+                    if let Some(async_action) =
+                        player::handle_sync(action, &mut app, &engine)
+                    {
+                        player::dispatch_async(
+                            async_action,
+                            &app,
+                            client.clone(),
+                            engine.device_id.clone(),
+                            action_tx.clone(),
+                        );
+                    }
                 }
             }
         }
@@ -121,13 +154,24 @@ async fn main() -> color_eyre::Result<()> {
                 }
             }
 
-            // Retry loading playlists if the initial attempt was rate-limited.
+            // Retry loading playlists if the initial attempt failed.
             if app.sidebar_items.len() <= 1 {
-                player::handle_action(Action::LoadPlaylists, &mut app, &client, &mut engine)
-                    .await;
+                player::dispatch_async(
+                    Action::LoadPlaylists,
+                    &app,
+                    client.clone(),
+                    engine.device_id.clone(),
+                    action_tx.clone(),
+                );
             }
 
-            player::handle_action(Action::RefreshPlayback, &mut app, &client, &mut engine).await;
+            player::dispatch_async(
+                Action::RefreshPlayback,
+                &app,
+                client.clone(),
+                engine.device_id.clone(),
+                action_tx.clone(),
+            );
             last_refresh = Instant::now();
         }
     }
@@ -161,8 +205,6 @@ fn process_player_events(
                         app.progress.start(position_ms as u64, track.duration_ms);
                         app.now_playing_track = Some(track);
                     } else {
-                        // No metadata — start with zero duration; the periodic
-                        // RefreshPlayback will fill it in without blocking input.
                         app.progress.start(position_ms as u64, 0);
                     }
                 }
