@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::error::{Result, SpotError};
 
-const DEFAULT_TICK_RATE_MS: u64 = 100;
+const DEFAULT_TICK_RATE_MS: u64 = 50;
 const DEFAULT_REFRESH_INTERVAL_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
