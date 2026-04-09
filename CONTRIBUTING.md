@@ -1,4 +1,4 @@
-# Contributing to spotatui
+# Contributing to parrotui-spotify
 
 Thanks for your interest in contributing. This document covers the conventions
 we follow so the codebase stays consistent and easy to work with.

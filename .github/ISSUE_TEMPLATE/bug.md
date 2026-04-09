@@ -22,12 +22,12 @@ labels: bug
 
 - OS:
 - Terminal:
-- spotatui version:
+- parrotui-spotify version:
 - Audio setup (PipeWire/PulseAudio/ALSA):
 
 ## Logs
 
-<!-- Paste relevant lines from ~/.cache/spotatui/spotatui.log.* -->
+<!-- Paste relevant lines from ~/.cache/parrotui-spotify/parrotui-spotify.log.* -->
 
 ```
 ```
