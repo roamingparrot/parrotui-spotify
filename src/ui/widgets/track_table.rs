@@ -43,7 +43,7 @@ pub fn draw(
         Cell::from(" #"),
         Cell::from("Title"),
         Cell::from("Artist"),
-        Cell::from("Time"),
+        Cell::from("Length"),
     ])
     .style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD))
     .bottom_margin(0);
