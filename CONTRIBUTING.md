@@ -132,12 +132,18 @@ How you verified this works. "Ran it and played a playlist" is fine
 for UI changes. Mention edge cases you checked.
 ```
 
+### Commit hygiene
+
+- Each commit should be a single logical change following the `type: description` convention.
+- Don't squash unrelated changes into one commit.
+- Don't interweave concerns — a commit that touches auth should not also tweak UI styling.
+- Prefer multiple clean commits over one large one. Reviewers read commit-by-commit.
+
 ### Review norms
 
 - PRs should be reviewable in one sitting. If it's big, split it.
 - Reviewer approves or requests changes — no "looks good" without reading.
 - Author resolves conversations after addressing feedback.
-- Squash-merge into main with a clean commit message.
 
 ## Code style
 
