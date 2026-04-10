@@ -45,10 +45,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn draw_content(frame: &mut Frame, app: &App, area: Rect, theme: &theme::Theme) {
+fn draw_content(frame: &mut Frame, app: &mut App, area: Rect, theme: &theme::Theme) {
     let focused = app.focus == FocusPanel::Content;
 
-    match &app.content {
+    // Extract info from content before splitting borrows for marquee.
+    let (title, cursor, tracks_empty, loading) = match &app.content {
         ContentView::Empty => {
             let border = panel_style(false, false, theme);
             let block = ratatui::widgets::Block::default()
@@ -61,8 +62,8 @@ fn draw_content(frame: &mut Frame, app: &App, area: Rect, theme: &theme::Theme) 
                 .style(Style::default().fg(theme.inactive))
                 .block(block);
             frame.render_widget(p, area);
+            return;
         }
-
         ContentView::PlaylistDetail {
             playlist_name,
             tracks,
@@ -70,47 +71,58 @@ fn draw_content(frame: &mut Frame, app: &App, area: Rect, theme: &theme::Theme) 
             total,
             loading,
             ..
-        } => {
-            let title = format!("{playlist_name} ({total})");
-            if *loading && tracks.is_empty() {
-                let border = panel_style(focused, !focused, theme);
-                let block = ratatui::widgets::Block::default()
-                    .title(format!(" {title} "))
-                    .borders(ratatui::widgets::Borders::ALL)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .title_style(border)
-                    .border_style(border);
-                let p = Paragraph::new("  Loading tracks...")
-                    .style(Style::default().fg(theme.inactive))
-                    .block(block);
-                frame.render_widget(p, area);
-                return;
-            }
-            track_table::draw(frame, app, tracks, *cursor, &title, focused, area, theme);
-        }
-
+        } => (
+            format!("{playlist_name} ({total})"),
+            *cursor,
+            tracks.is_empty(),
+            *loading,
+        ),
         ContentView::LikedSongs {
             tracks,
             cursor,
             total,
             loading,
-        } => {
-            let title = format!("Liked Songs ({total})");
-            if *loading && tracks.is_empty() {
-                let border = panel_style(focused, !focused, theme);
-                let block = ratatui::widgets::Block::default()
-                    .title(format!(" {title} "))
-                    .borders(ratatui::widgets::Borders::ALL)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .title_style(border)
-                    .border_style(border);
-                let p = Paragraph::new("  Loading liked songs...")
-                    .style(Style::default().fg(theme.inactive))
-                    .block(block);
-                frame.render_widget(p, area);
-                return;
-            }
-            track_table::draw(frame, app, tracks, *cursor, &title, focused, area, theme);
-        }
+        } => (
+            format!("Liked Songs ({total})"),
+            *cursor,
+            tracks.is_empty(),
+            *loading,
+        ),
+    };
+
+    if loading && tracks_empty {
+        let border = panel_style(focused, !focused, theme);
+        let block = ratatui::widgets::Block::default()
+            .title(format!(" {title} "))
+            .borders(ratatui::widgets::Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .title_style(border)
+            .border_style(border);
+        let p = Paragraph::new("  Loading...")
+            .style(Style::default().fg(theme.inactive))
+            .block(block);
+        frame.render_widget(p, area);
+        return;
     }
+
+    let now_playing_uri = app
+        .now_playing_track
+        .as_ref()
+        .and_then(|t| t.uri.as_deref())
+        .map(|s| s.to_string());
+
+    // Split borrows: content (tracks) and track_marquee are disjoint fields.
+    let tracks = app.content.tracks();
+    let marquee = &mut app.track_marquee;
+    track_table::draw(
+        frame,
+        now_playing_uri.as_deref(),
+        marquee,
+        tracks,
+        cursor,
+        &title,
+        focused,
+        area,
+        theme,
+    );
 }

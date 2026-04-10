@@ -3,16 +3,19 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState};
 use ratatui::Frame;
+use unicode_width::UnicodeWidthStr;
 
 use crate::api::Track;
-use crate::state::App;
+use crate::state::marquee::MarqueeState;
+use crate::ui::marquee::{marquee_text, truncate_unicode};
 use crate::ui::theme::{panel_style, Theme};
 use crate::ui::util::millis_to_minutes;
 
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     frame: &mut Frame,
-    app: &App,
+    now_playing_uri: Option<&str>,
+    marquee: &mut MarqueeState,
     tracks: &[Track],
     cursor: usize,
     title: &str,
@@ -34,10 +37,9 @@ pub fn draw(
         return;
     }
 
-    let now_playing_uri = app
-        .now_playing_track
-        .as_ref()
-        .and_then(|t| t.uri.as_deref());
+    // Estimate the title column width: 45% of inner width (matching the constraint).
+    let inner_w = area.width.saturating_sub(2); // borders
+    let title_col_w = ((inner_w as f32 * 0.45) as usize).saturating_sub(4);
 
     let header = Row::new(vec![
         Cell::from(" #"),
@@ -52,8 +54,8 @@ pub fn draw(
         .iter()
         .enumerate()
         .map(|(i, track)| {
-            let is_playing = now_playing_uri
-                .is_some_and(|uri| track.uri.as_deref() == Some(uri));
+            let is_playing =
+                now_playing_uri.is_some_and(|uri| track.uri.as_deref() == Some(uri));
 
             let num = if is_playing {
                 "▶".to_string()
@@ -71,9 +73,22 @@ pub fn draw(
                 theme.base_style()
             };
 
+            // Apply marquee scrolling to the selected row's title.
+            let name = if i == cursor && focused && title_col_w > 0 {
+                let text_w = UnicodeWidthStr::width(track.name.as_str());
+                if text_w > title_col_w {
+                    let off = marquee.tick(i, text_w, title_col_w);
+                    marquee_text(&track.name, title_col_w, off)
+                } else {
+                    track.name.clone()
+                }
+            } else {
+                truncate_unicode(&track.name, title_col_w)
+            };
+
             Row::new(vec![
                 Cell::from(Span::styled(format!(" {num}"), style)),
-                Cell::from(Span::styled(track.name.clone(), style)),
+                Cell::from(Span::styled(name, style)),
                 Cell::from(Span::styled(track.artist_names(), style)),
                 Cell::from(Span::styled(dur, style)),
             ])

@@ -110,6 +110,14 @@ impl ContentView {
     pub fn can_load_more(&self) -> bool {
         (self.len() as u32) < self.total() && !self.is_loading()
     }
+
+    pub fn tracks(&self) -> &[Track] {
+        match self {
+            Self::Empty => &[],
+            Self::PlaylistDetail { tracks, .. } => tracks,
+            Self::LikedSongs { tracks, .. } => tracks,
+        }
+    }
 }
 
 pub struct App {
@@ -138,6 +146,7 @@ pub struct App {
 
     // Marquee scroll state
     pub sidebar_marquee: MarqueeState,
+    pub track_marquee: MarqueeState,
 
     // Rate-limit backoff — skip API calls until this instant
     pub rate_limited_until: Option<std::time::Instant>,
@@ -166,6 +175,7 @@ impl App {
             device_name,
             pending_g: false,
             sidebar_marquee: MarqueeState::new(),
+            track_marquee: MarqueeState::new(),
             rate_limited_until: None,
             theme,
         }
