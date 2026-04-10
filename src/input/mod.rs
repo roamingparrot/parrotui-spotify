@@ -75,8 +75,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             Some(Action::LoadMore)
         }
 
-        // Select / expand
-        KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => Some(Action::Select),
+        // Move focus right (no reload)
+        KeyCode::Char('l') | KeyCode::Right => {
+            if app.focus == FocusPanel::Sidebar {
+                app.focus = FocusPanel::Content;
+            }
+            None
+        }
+
+        // Select / expand (loads playlist or plays track)
+        KeyCode::Enter => Some(Action::Select),
 
         // Back / collapse
         KeyCode::Char('h') | KeyCode::Left => {
