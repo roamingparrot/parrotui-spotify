@@ -2094,6 +2094,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "parrotui-spotify"
+version = "0.2.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "color-eyre",
+ "crossterm",
+ "dirs",
+ "keyring",
+ "librespot-connect",
+ "librespot-core",
+ "librespot-metadata",
+ "librespot-oauth",
+ "librespot-playback",
+ "open",
+ "rand 0.8.5",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "unicode-width 0.2.0",
+ "url",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2900,38 +2932,6 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "spotatui"
-version = "0.2.0"
-dependencies = [
- "base64",
- "chrono",
- "color-eyre",
- "crossterm",
- "dirs",
- "keyring",
- "librespot-connect",
- "librespot-core",
- "librespot-metadata",
- "librespot-oauth",
- "librespot-playback",
- "open",
- "rand 0.8.5",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "unicode-width 0.2.0",
- "url",
 ]
 
 [[package]]
