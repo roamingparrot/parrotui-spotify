@@ -77,7 +77,7 @@ fn draw_playlists(frame: &mut Frame, app: &mut App, area: Rect, focused: bool, t
             };
             let cursor_idx = app.sidebar_cursor.saturating_sub(1);
             let is_selected = has_selection && i == cursor_idx;
-            let label = if is_selected {
+            let label = if is_selected && focused {
                 let text_w = unicode_width::UnicodeWidthStr::width(raw.as_str());
                 if text_w > label_width {
                     let off = app.sidebar_marquee.tick(i, text_w, label_width);
