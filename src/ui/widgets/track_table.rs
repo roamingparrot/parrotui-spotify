@@ -22,6 +22,7 @@ pub fn draw(
     focused: bool,
     area: Rect,
     theme: &Theme,
+    scroll_offset: &mut usize,
 ) {
     let border = panel_style(focused, !focused, theme);
 
@@ -103,6 +104,7 @@ pub fn draw(
     ];
 
     let mut state = TableState::default();
+    *state.offset_mut() = *scroll_offset;
     state.select(Some(cursor));
 
     let table = Table::new(rows, widths)
@@ -112,4 +114,5 @@ pub fn draw(
         .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, area, &mut state);
+    *scroll_offset = state.offset();
 }

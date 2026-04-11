@@ -111,9 +111,11 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect, theme: &theme::The
         .and_then(|t| t.uri.as_deref())
         .map(|s| s.to_string());
 
-    // Split borrows: content (tracks) and track_marquee are disjoint fields.
+    // Split borrows: content (tracks), track_marquee, and content_scroll_offset
+    // are disjoint fields.
     let tracks = app.content.tracks();
     let marquee = &mut app.track_marquee;
+    let scroll_offset = &mut app.content_scroll_offset;
     track_table::draw(
         frame,
         now_playing_uri.as_deref(),
@@ -124,5 +126,6 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect, theme: &theme::The
         focused,
         area,
         theme,
+        scroll_offset,
     );
 }

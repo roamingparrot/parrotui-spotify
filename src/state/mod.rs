@@ -148,6 +148,11 @@ pub struct App {
     pub sidebar_marquee: MarqueeState,
     pub track_marquee: MarqueeState,
 
+    // Viewport scroll offsets (persisted across frames so the list only
+    // scrolls when the cursor leaves the visible area).
+    pub sidebar_scroll_offset: usize,
+    pub content_scroll_offset: usize,
+
     // Rate-limit backoff — skip API calls until this instant
     pub rate_limited_until: Option<std::time::Instant>,
 
@@ -176,6 +181,8 @@ impl App {
             pending_g: false,
             sidebar_marquee: MarqueeState::new(),
             track_marquee: MarqueeState::new(),
+            sidebar_scroll_offset: 0,
+            content_scroll_offset: 0,
             rate_limited_until: None,
             theme,
         }
@@ -255,10 +262,14 @@ impl App {
 
     pub fn jump_to_top(&mut self) {
         match self.focus {
-            FocusPanel::Sidebar => self.sidebar_cursor = 0,
+            FocusPanel::Sidebar => {
+                self.sidebar_cursor = 0;
+                self.sidebar_scroll_offset = 0;
+            }
             FocusPanel::Content => {
                 if self.content.len() > 0 {
                     *self.content.cursor_mut() = 0;
+                    self.content_scroll_offset = 0;
                 }
             }
         }
@@ -296,6 +307,7 @@ impl App {
             .extend(playlists.into_iter().map(SidebarItem::Playlist));
         self.sidebar_total = total;
         self.sidebar_loading = false;
+        self.sidebar_scroll_offset = 0;
     }
 
     pub fn append_sidebar_playlists(&mut self, playlists: Vec<Playlist>, total: u32) {
@@ -324,6 +336,7 @@ impl App {
             total: page.total,
             loading: false,
         };
+        self.content_scroll_offset = 0;
     }
 
     pub fn append_playlist_tracks(&mut self, page: Page<PlaylistItem>) {
@@ -349,6 +362,7 @@ impl App {
             total: page.total,
             loading: false,
         };
+        self.content_scroll_offset = 0;
     }
 
     pub fn append_liked_songs(&mut self, page: Page<SavedTrack>) {

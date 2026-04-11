@@ -93,6 +93,7 @@ fn draw_playlists(frame: &mut Frame, app: &mut App, area: Rect, focused: bool, t
         .collect();
 
     let mut state = ListState::default();
+    *state.offset_mut() = app.sidebar_scroll_offset;
     if has_selection {
         state.select(Some(app.sidebar_cursor - 1));
     }
@@ -104,4 +105,5 @@ fn draw_playlists(frame: &mut Frame, app: &mut App, area: Rect, focused: bool, t
         .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(list, area, &mut state);
+    app.sidebar_scroll_offset = state.offset();
 }
