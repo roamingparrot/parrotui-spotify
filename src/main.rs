@@ -85,8 +85,6 @@ async fn main() -> color_eyre::Result<()> {
     let mut last_refresh = Instant::now();
 
     loop {
-        terminal.draw(|f| ui::draw(f, &mut app))?;
-
         app.clear_stale_notification();
 
         process_player_events(&mut app, &mut player_events);
@@ -121,13 +119,16 @@ async fn main() -> color_eyre::Result<()> {
             }
         }
 
-        // Only sleep when idle — redraw immediately after input for snappy navigation.
-        if !had_input {
-            tokio::time::sleep(tick_rate).await;
-        }
+        // Draw after processing input so state changes are visible immediately.
+        terminal.draw(|f| ui::draw(f, &mut app))?;
 
         if !app.running {
             break;
+        }
+
+        // Only sleep when idle — redraw immediately after input for snappy navigation.
+        if !had_input {
+            tokio::time::sleep(tick_rate).await;
         }
 
         let rate_ok = app
