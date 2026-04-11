@@ -26,15 +26,17 @@
           cmake  # some librespot transitive deps need this
         ];
 
-        buildInputs = with pkgs; [
-          openssl
+        buildInputs = with pkgs; lib.optionals stdenv.isLinux [
           dbus
           libsecret
-
-          # Audio — librespot's rodio backend uses CPAL which talks to ALSA.
-          # PipeWire or PulseAudio provide ALSA compat on most NixOS setups.
           alsa-lib
-        ];
+        ] ++ lib.optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [
+          AudioUnit
+          CoreAudio
+          CoreServices
+          Security
+          SystemConfiguration
+        ]);
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {

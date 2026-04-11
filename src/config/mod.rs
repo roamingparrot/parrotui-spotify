@@ -71,7 +71,7 @@ impl Config {
 
 pub fn config_dir() -> PathBuf {
     dirs::config_dir()
-        .expect("no XDG config dir")
+        .expect("could not determine config directory")
         .join("parrotui-spotify")
 }
 
@@ -81,7 +81,7 @@ pub fn config_path() -> PathBuf {
 
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
-        .expect("no XDG cache dir")
+        .expect("could not determine cache directory")
         .join("parrotui-spotify")
 }
 
