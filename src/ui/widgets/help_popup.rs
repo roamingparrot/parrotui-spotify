@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::Constraint;
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Cell, Clear, Row, Table};
-use ratatui::Frame;
-use ratatui::layout::Rect;
 
 use crate::ui::theme::Theme;
 use crate::ui::util::centered_rect;
@@ -37,7 +37,11 @@ pub fn draw(frame: &mut Frame, area: Rect, theme: &Theme) {
 
     let block = Block::default()
         .title(" Keybindings ")
-        .title_style(Style::default().fg(theme.active).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(theme.active)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme.active));

@@ -1,14 +1,14 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState};
-use ratatui::Frame;
 use unicode_width::UnicodeWidthStr;
 
 use crate::api::Track;
 use crate::state::marquee::MarqueeState;
 use crate::ui::marquee::{marquee_text, truncate_unicode};
-use crate::ui::theme::{panel_style, Theme};
+use crate::ui::theme::{Theme, panel_style};
 use crate::ui::util::millis_to_minutes;
 
 #[allow(clippy::too_many_arguments)]
@@ -48,15 +48,18 @@ pub fn draw(
         Cell::from("Artist"),
         Cell::from("Length"),
     ])
-    .style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD))
+    .style(
+        Style::default()
+            .fg(theme.header)
+            .add_modifier(Modifier::BOLD),
+    )
     .bottom_margin(0);
 
     let rows: Vec<Row> = tracks
         .iter()
         .enumerate()
         .map(|(i, track)| {
-            let is_playing =
-                now_playing_uri.is_some_and(|uri| track.uri.as_deref() == Some(uri));
+            let is_playing = now_playing_uri.is_some_and(|uri| track.uri.as_deref() == Some(uri));
 
             let num = if is_playing {
                 "▶".to_string()

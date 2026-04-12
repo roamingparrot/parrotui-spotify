@@ -47,7 +47,6 @@ impl RepeatMode {
             Self::Track => Self::Off,
         }
     }
-
 }
 
 // -- Track --

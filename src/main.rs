@@ -55,8 +55,7 @@ async fn main() -> color_eyre::Result<()> {
     let mut app = App::new(config.device_name.clone(), config.initial_volume, theme);
 
     // Channel for async action results.
-    let (action_tx, mut action_rx) =
-        tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();
+    let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();
 
     // Fire initial data loads (non-blocking — results arrive via channel).
     player::dispatch_async(
@@ -104,8 +103,7 @@ async fn main() -> color_eyre::Result<()> {
                 }
                 had_input = true;
                 if let Some(action) = input::handle_key(&mut app, key)
-                    && let Some(async_action) =
-                        player::handle_sync(action, &mut app, &engine)
+                    && let Some(async_action) = player::handle_sync(action, &mut app, &engine)
                 {
                     player::dispatch_async(
                         async_action,

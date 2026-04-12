@@ -71,22 +71,39 @@ pub type ResultTx = tokio::sync::mpsc::UnboundedSender<ActionResult>;
 
 /// Handle an action synchronously if possible. Returns `Some(action)` for
 /// actions that need async dispatch (API calls).
-pub fn handle_sync(
-    action: Action,
-    app: &mut App,
-    engine: &PlaybackEngine,
-) -> Option<Action> {
+pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Option<Action> {
     let result = match action {
-        Action::TogglePlayPause => { return sync_result(toggle_play_pause(app, engine)); }
-        Action::NextTrack => { return sync_result(engine.next()); }
-        Action::PreviousTrack => { return sync_result(engine.prev()); }
-        Action::VolumeUp => { return sync_result(adjust_volume(app, engine, 5)); }
-        Action::VolumeDown => { return sync_result(adjust_volume(app, engine, -5)); }
-        Action::SeekForward => { return sync_result(seek_relative(app, engine, 5000)); }
-        Action::SeekBackward => { return sync_result(seek_relative(app, engine, -5000)); }
-        Action::ToggleShuffle => { return sync_result(toggle_shuffle(app, engine)); }
-        Action::CycleRepeat => { return sync_result(cycle_repeat(app, engine)); }
-        Action::GoBack => { handle_go_back(app); return None; }
+        Action::TogglePlayPause => {
+            return sync_result(toggle_play_pause(app, engine));
+        }
+        Action::NextTrack => {
+            return sync_result(engine.next());
+        }
+        Action::PreviousTrack => {
+            return sync_result(engine.prev());
+        }
+        Action::VolumeUp => {
+            return sync_result(adjust_volume(app, engine, 5));
+        }
+        Action::VolumeDown => {
+            return sync_result(adjust_volume(app, engine, -5));
+        }
+        Action::SeekForward => {
+            return sync_result(seek_relative(app, engine, 5000));
+        }
+        Action::SeekBackward => {
+            return sync_result(seek_relative(app, engine, -5000));
+        }
+        Action::ToggleShuffle => {
+            return sync_result(toggle_shuffle(app, engine));
+        }
+        Action::CycleRepeat => {
+            return sync_result(cycle_repeat(app, engine));
+        }
+        Action::GoBack => {
+            handle_go_back(app);
+            return None;
+        }
 
         // Select has a sync part (state change) + optional async part
         Action::Select => return handle_select_sync(app, engine),
@@ -163,18 +180,18 @@ enum ContentSnapshot {
 fn snapshot(app: &App) -> AsyncContext {
     let content_snapshot = match &app.content {
         ContentView::Empty => ContentSnapshot::Empty,
-        ContentView::PlaylistDetail { playlist_uri, cursor, .. } => {
-            ContentSnapshot::PlaylistDetail {
-                uri: playlist_uri.clone(),
-                cursor: *cursor,
-            }
-        }
-        ContentView::LikedSongs { tracks, cursor, .. } => {
-            ContentSnapshot::LikedSongs {
-                uris: tracks.iter().filter_map(|t| t.uri.clone()).collect(),
-                cursor: *cursor,
-            }
-        }
+        ContentView::PlaylistDetail {
+            playlist_uri,
+            cursor,
+            ..
+        } => ContentSnapshot::PlaylistDetail {
+            uri: playlist_uri.clone(),
+            cursor: *cursor,
+        },
+        ContentView::LikedSongs { tracks, cursor, .. } => ContentSnapshot::LikedSongs {
+            uris: tracks.iter().filter_map(|t| t.uri.clone()).collect(),
+            cursor: *cursor,
+        },
     };
     AsyncContext {
         focus: app.focus,
@@ -286,7 +303,10 @@ async fn load_more_async(ctx: AsyncContext, client: &SpotifyClient) -> ActionRes
                 ContentSnapshot::Empty => ActionResult::PlaybackStarted,
                 ContentSnapshot::PlaylistDetail { uri, .. } => {
                     let id = uri.rsplit(':').next().unwrap_or(uri);
-                    match client.playlist_tracks(id, PAGE_SIZE, ctx.content_loaded).await {
+                    match client
+                        .playlist_tracks(id, PAGE_SIZE, ctx.content_loaded)
+                        .await
+                    {
                         Ok(page) => ActionResult::MorePlaylistTracks { page },
                         Err(e) => ActionResult::Failed { error: e },
                     }
@@ -302,44 +322,34 @@ async fn load_more_async(ctx: AsyncContext, client: &SpotifyClient) -> ActionRes
     }
 }
 
-async fn select_async(
-    ctx: AsyncContext,
-    client: &SpotifyClient,
-    device_id: &str,
-) -> ActionResult {
+async fn select_async(ctx: AsyncContext, client: &SpotifyClient, device_id: &str) -> ActionResult {
     match ctx.focus {
         FocusPanel::Sidebar => match ctx.sidebar_item {
             SidebarItem::LikedSongs => match client.liked_tracks(PAGE_SIZE, 0).await {
                 Ok(page) => ActionResult::LikedSongs { page },
                 Err(e) => ActionResult::Failed { error: e },
             },
-            SidebarItem::Playlist(pl) => {
-                match client.playlist_tracks(&pl.id, PAGE_SIZE, 0).await {
-                    Ok(page) => ActionResult::PlaylistTracks {
-                        name: pl.name,
-                        uri: pl.uri,
-                        page,
-                    },
-                    Err(e) => ActionResult::Failed { error: e },
-                }
-            }
+            SidebarItem::Playlist(pl) => match client.playlist_tracks(&pl.id, PAGE_SIZE, 0).await {
+                Ok(page) => ActionResult::PlaylistTracks {
+                    name: pl.name,
+                    uri: pl.uri,
+                    page,
+                },
+                Err(e) => ActionResult::Failed { error: e },
+            },
         },
         FocusPanel::Content => {
             // The sync path already set optimistic state; just issue the play call.
             let result = match &ctx.content_snapshot {
                 ContentSnapshot::Empty => return ActionResult::PlaybackStarted,
                 ContentSnapshot::PlaylistDetail { uri, cursor } => {
-                    client
-                        .play_context_on(uri, Some(*cursor), device_id)
-                        .await
+                    client.play_context_on(uri, Some(*cursor), device_id).await
                 }
                 ContentSnapshot::LikedSongs { uris, cursor } => {
                     if uris.is_empty() {
                         return ActionResult::PlaybackStarted;
                     }
-                    client
-                        .play_tracks_on(uris, Some(*cursor), device_id)
-                        .await
+                    client.play_tracks_on(uris, Some(*cursor), device_id).await
                 }
             };
             match result {

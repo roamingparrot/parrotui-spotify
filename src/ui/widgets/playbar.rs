@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, LineGauge, Paragraph};
-use ratatui::Frame;
 
 use crate::api::RepeatMode;
 use crate::state::App;
@@ -43,9 +43,12 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         return;
     }
 
-    let rows =
-        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Length(1)])
-            .split(inner);
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(inner);
 
     match &app.now_playing_track {
         Some(track) => {
@@ -70,7 +73,10 @@ fn draw_track_info(frame: &mut Frame, track: &crate::api::Track, area: Rect, the
             .add_modifier(Modifier::BOLD),
     );
     let sep = Span::raw("  —  ");
-    let artist = Span::styled(track.artist_names(), Style::default().fg(theme.playbar_text));
+    let artist = Span::styled(
+        track.artist_names(),
+        Style::default().fg(theme.playbar_text),
+    );
 
     let line = Line::from(vec![name, sep, artist]);
     let p = Paragraph::new(line).alignment(Alignment::Center);

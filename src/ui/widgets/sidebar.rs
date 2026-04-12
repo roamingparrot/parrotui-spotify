@@ -1,11 +1,11 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState};
-use ratatui::Frame;
 
 use crate::state::{App, FocusPanel, SidebarItem};
 use crate::ui::marquee::{marquee_text, truncate_unicode};
-use crate::ui::theme::{panel_style, Theme};
+use crate::ui::theme::{Theme, panel_style};
 
 pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusPanel::Sidebar;

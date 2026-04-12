@@ -220,7 +220,10 @@ impl App {
             ContentView::PlaylistDetail { tracks, .. } => tracks,
             ContentView::LikedSongs { tracks, .. } => tracks,
         };
-        tracks.iter().find(|t| t.uri.as_deref() == Some(uri)).cloned()
+        tracks
+            .iter()
+            .find(|t| t.uri.as_deref() == Some(uri))
+            .cloned()
     }
 
     // -- Cursor movement --
@@ -317,17 +320,8 @@ impl App {
         self.sidebar_loading = false;
     }
 
-    pub fn set_playlist_tracks(
-        &mut self,
-        name: String,
-        uri: String,
-        page: Page<PlaylistItem>,
-    ) {
-        let tracks = page
-            .items
-            .into_iter()
-            .filter_map(|pi| pi.track)
-            .collect();
+    pub fn set_playlist_tracks(&mut self, name: String, uri: String, page: Page<PlaylistItem>) {
+        let tracks = page.items.into_iter().filter_map(|pi| pi.track).collect();
         self.content = ContentView::PlaylistDetail {
             playlist_name: name,
             playlist_uri: uri,

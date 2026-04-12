@@ -3,10 +3,10 @@ pub mod theme;
 pub mod util;
 pub mod widgets;
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
 use crate::state::{App, ContentView, FocusPanel};
 use theme::panel_style;
@@ -29,11 +29,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     .split(area);
 
     let sidebar_w = (area.width / 5).max(20);
-    let main = Layout::horizontal([
-        Constraint::Length(sidebar_w),
-        Constraint::Min(0),
-    ])
-    .split(outer[1]);
+    let main =
+        Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(0)]).split(outer[1]);
 
     sidebar::draw(frame, app, main[0], &theme);
     draw_content(frame, app, main[1], &theme);
