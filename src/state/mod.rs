@@ -206,10 +206,10 @@ impl App {
     }
 
     pub fn clear_stale_notification(&mut self) {
-        if let Some(n) = &self.notification {
-            if n.expired() {
-                self.notification = None;
-            }
+        if let Some(n) = &self.notification
+            && n.expired()
+        {
+            self.notification = None;
         }
     }
 

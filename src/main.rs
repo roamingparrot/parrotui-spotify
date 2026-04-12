@@ -103,18 +103,17 @@ async fn main() -> color_eyre::Result<()> {
                     continue;
                 }
                 had_input = true;
-                if let Some(action) = input::handle_key(&mut app, key) {
-                    if let Some(async_action) =
+                if let Some(action) = input::handle_key(&mut app, key)
+                    && let Some(async_action) =
                         player::handle_sync(action, &mut app, &engine)
-                    {
-                        player::dispatch_async(
-                            async_action,
-                            &app,
-                            client.clone(),
-                            engine.device_id.clone(),
-                            action_tx.clone(),
-                        );
-                    }
+                {
+                    player::dispatch_async(
+                        async_action,
+                        &app,
+                        client.clone(),
+                        engine.device_id.clone(),
+                        action_tx.clone(),
+                    );
                 }
             }
         }
@@ -139,18 +138,18 @@ async fn main() -> color_eyre::Result<()> {
             app.rate_limited_until = None;
 
             // Proactively refresh the OAuth token before it expires.
-            if token_data.is_expired() {
-                if let Some(rt) = token_data.refresh_token.as_deref() {
-                    match auth::refresh(rt).await {
-                        Ok(refreshed) => {
-                            tracing::info!("oauth token refreshed");
-                            client.set_token(&refreshed.access_token);
-                            let _ = token_store.save(&refreshed);
-                            token_data = refreshed;
-                        }
-                        Err(e) => {
-                            tracing::warn!(%e, "token refresh failed");
-                        }
+            if token_data.is_expired()
+                && let Some(rt) = token_data.refresh_token.as_deref()
+            {
+                match auth::refresh(rt).await {
+                    Ok(refreshed) => {
+                        tracing::info!("oauth token refreshed");
+                        client.set_token(&refreshed.access_token);
+                        let _ = token_store.save(&refreshed);
+                        token_data = refreshed;
+                    }
+                    Err(e) => {
+                        tracing::warn!(%e, "token refresh failed");
                     }
                 }
             }

@@ -244,10 +244,11 @@ async fn load_playlists_async(client: &SpotifyClient) -> Result<(Vec<api::Playli
         Ok(recent) => {
             let mut order: Vec<String> = Vec::new();
             for item in &recent.items {
-                if let Some(ctx) = &item.context {
-                    if ctx.context_type == "playlist" && !order.contains(&ctx.uri) {
-                        order.push(ctx.uri.clone());
-                    }
+                if let Some(ctx) = &item.context
+                    && ctx.context_type == "playlist"
+                    && !order.contains(&ctx.uri)
+                {
+                    order.push(ctx.uri.clone());
                 }
             }
             playlists.sort_by_key(|pl| match order.iter().position(|uri| *uri == pl.uri) {
@@ -383,15 +384,15 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
                     let v = dev.volume_percent.unwrap_or(app.volume);
                     app.volume = ((v + 2) / 5 * 5).min(100);
                 }
-                if app.now_playing_track.is_none() {
-                    if let Some(track) = pb.item {
-                        app.progress
-                            .start(pb.progress_ms.unwrap_or(0), track.duration_ms);
-                        if !pb.is_playing {
-                            app.progress.pause();
-                        }
-                        app.now_playing_track = Some(track);
+                if app.now_playing_track.is_none()
+                    && let Some(track) = pb.item
+                {
+                    app.progress
+                        .start(pb.progress_ms.unwrap_or(0), track.duration_ms);
+                    if !pb.is_playing {
+                        app.progress.pause();
                     }
+                    app.now_playing_track = Some(track);
                 }
             }
         }
