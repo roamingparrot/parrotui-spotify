@@ -5,13 +5,33 @@ we follow so the codebase stays consistent and easy to work with.
 
 ## Getting started
 
+### Linux (Nix)
+
 ```sh
 nix develop          # preferred — pins toolchain + system deps
-# or
-nix-shell -p cargo rustc pkg-config openssl dbus libsecret alsa-lib cmake
 ```
 
-Then:
+### Linux (manual)
+
+```sh
+# Debian/Ubuntu
+sudo apt-get install libasound2-dev libdbus-1-dev libsecret-1-dev pkg-config cmake
+
+# Fedora
+sudo dnf install alsa-lib-devel dbus-devel libsecret-devel pkg-config cmake
+```
+
+### macOS
+
+```sh
+xcode-select --install   # CoreAudio, Keychain, cmake are built-in
+```
+
+### Windows
+
+Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the C++ workload.
+
+### Then
 
 ```sh
 cargo build

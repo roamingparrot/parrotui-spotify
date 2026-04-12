@@ -22,7 +22,10 @@ Part of the **parrotui** family of TUI apps. This parrot only repeats the good s
 ## Requirements
 
 - A Spotify Premium account (required for streaming)
-- Working audio output (ALSA/PipeWire/PulseAudio — PipeWire's ALSA compat layer works fine)
+- Working audio output:
+  - **Linux** — ALSA, PipeWire, or PulseAudio (PipeWire's ALSA compat layer works fine)
+  - **macOS** — CoreAudio (built-in, nothing to install)
+  - **Windows** — WASAPI (built-in, nothing to install)
 
 ## Setup
 
@@ -33,8 +36,20 @@ On first run, the app opens a browser window for Spotify OAuth (twice — once f
 ### From source
 
 ```sh
+cargo install --git https://github.com/roamingparrot/parrotui-spotify
+```
+
+Or clone and build locally:
+
+```sh
 cargo install --path .
 ```
+
+#### Build prerequisites
+
+- **Linux** — `libasound2-dev libdbus-1-dev libsecret-1-dev pkg-config cmake`
+- **macOS** — Xcode command line tools (`xcode-select --install`)
+- **Windows** — Visual Studio Build Tools with C++ workload
 
 ### NixOS / Nix
 
