@@ -33,6 +33,18 @@ On first run, the app opens a browser window for Spotify OAuth (twice — once f
 
 ## Installation
 
+### Quick install (macOS / Linux)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/roamingparrot/parrotui-spotify/main/install.sh | sh
+```
+
+This downloads the latest release binary for your platform and puts it in `/usr/local/bin`. To install elsewhere:
+
+```sh
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/roamingparrot/parrotui-spotify/main/install.sh | sh
+```
+
 ### From source
 
 ```sh
