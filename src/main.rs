@@ -24,6 +24,11 @@ use crate::state::App;
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("parrotui-spotify {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     color_eyre::install()?;
     init_logging();
 
