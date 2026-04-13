@@ -111,6 +111,14 @@ impl ContentView {
         (self.len() as u32) < self.total() && !self.is_loading()
     }
 
+    pub fn set_loading(&mut self) {
+        match self {
+            Self::Empty => {}
+            Self::PlaylistDetail { loading, .. } => *loading = true,
+            Self::LikedSongs { loading, .. } => *loading = true,
+        }
+    }
+
     pub fn tracks(&self) -> &[Track] {
         match self {
             Self::Empty => &[],
@@ -153,6 +161,9 @@ pub struct App {
     pub sidebar_scroll_offset: usize,
     pub content_scroll_offset: usize,
 
+    // Deferred jump — set when G is pressed but not all tracks are loaded yet.
+    pub pending_jump_to_bottom: bool,
+
     // Rate-limit backoff — skip API calls until this instant
     pub rate_limited_until: Option<std::time::Instant>,
 
@@ -183,6 +194,7 @@ impl App {
             track_marquee: MarqueeState::new(),
             sidebar_scroll_offset: 0,
             content_scroll_offset: 0,
+            pending_jump_to_bottom: false,
             rate_limited_until: None,
             theme,
         }
@@ -282,11 +294,13 @@ impl App {
         match self.focus {
             FocusPanel::Sidebar => {
                 self.sidebar_cursor = self.sidebar_items.len().saturating_sub(1);
+                self.sidebar_scroll_offset = 0;
             }
             FocusPanel::Content => {
                 if self.content.len() > 0 {
                     let len = self.content.len();
                     *self.content.cursor_mut() = len.saturating_sub(1);
+                    self.content_scroll_offset = 0;
                 }
             }
         }
@@ -330,6 +344,7 @@ impl App {
             total: page.total,
             loading: false,
         };
+        self.pending_jump_to_bottom = false;
         self.content_scroll_offset = 0;
     }
 
@@ -356,6 +371,7 @@ impl App {
             total: page.total,
             loading: false,
         };
+        self.pending_jump_to_bottom = false;
         self.content_scroll_offset = 0;
     }
 

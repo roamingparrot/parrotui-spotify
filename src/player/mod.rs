@@ -382,9 +382,15 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
         }
         ActionResult::MorePlaylistTracks { page } => {
             app.append_playlist_tracks(page);
+            if app.pending_jump_to_bottom {
+                app.jump_to_bottom();
+            }
         }
         ActionResult::MoreLikedSongs { page } => {
             app.append_liked_songs(page);
+            if app.pending_jump_to_bottom {
+                app.jump_to_bottom();
+            }
         }
         ActionResult::PlaybackState { state } => {
             if let Some(pb) = state {

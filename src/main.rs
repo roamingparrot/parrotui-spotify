@@ -98,6 +98,20 @@ async fn main() -> color_eyre::Result<()> {
             player::apply_result(&mut app, result);
         }
 
+        // Background-load remaining tracks so the full playlist is in memory.
+        if app.content.can_load_more() {
+            player::dispatch_async(
+                Action::LoadMore,
+                &app,
+                client.clone(),
+                engine.device_id.clone(),
+                action_tx.clone(),
+            );
+            app.content.set_loading();
+        } else {
+            app.pending_jump_to_bottom = false;
+        }
+
         // Drain all queued input events — sync actions run inline, async ones
         // are spawned as background tasks via the channel.
         let mut had_input = false;

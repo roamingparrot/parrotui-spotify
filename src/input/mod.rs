@@ -5,6 +5,9 @@ use crate::state::{App, FocusPanel};
 
 /// Map a terminal key event to an app action (or None to ignore).
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
+    // Any keypress cancels a pending jump-to-bottom chain.
+    app.pending_jump_to_bottom = false;
+
     // Help popup is modal — only Esc/q/?/Enter dismiss it
     if app.show_help {
         match key.code {
@@ -69,10 +72,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             None
         }
 
-        // G — jump to bottom
+        // G — jump to bottom of loaded tracks (background loading fills the rest)
         KeyCode::Char('G') => {
+            if app.content.can_load_more() || app.content.is_loading() {
+                app.pending_jump_to_bottom = true;
+            }
             app.jump_to_bottom();
-            Some(Action::LoadMore)
+            None
         }
 
         // Move focus right (no reload)
