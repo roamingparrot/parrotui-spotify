@@ -2,7 +2,7 @@
 
 A keyboard-driven Spotify client for the terminal with built-in playback, built with [ratatui](https://github.com/ratatui/ratatui) and [librespot](https://github.com/librespot-org/librespot).
 
-Part of the **parrotui** family of TUI apps. This parrot only repeats the good stuff.
+Part of the **parrotui** family of TUI apps. More TUI clients are on the way — stay tuned.
 
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
