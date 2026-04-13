@@ -48,6 +48,12 @@ keyring = { version = "3", features = ["apple-native"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 
+[profile.dev.build-override]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 1
+
 [profile.release]
 lto = true
 codegen-units = 1
