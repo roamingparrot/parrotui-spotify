@@ -46,32 +46,22 @@ impl TokenStore {
     pub fn save(&self, data: &TokenData) -> Result<()> {
         let json = serde_json::to_string(data)?;
 
-        // Try keyring. On many headless or minimal systems this fails,
-        // which is fine — we fall back to a file.
-        match self.save_to_keyring(&json) {
-            Ok(()) => {
-                tracing::debug!("token saved to keyring");
-                return Ok(());
-            }
-            Err(e) => {
-                tracing::warn!("keyring unavailable ({e}), falling back to file");
-            }
-        }
-
+        // Always persist to file — avoids OS keychain prompts that
+        // interrupt TUI usage (macOS re-prompts when the binary changes).
         self.save_to_file(&json)
     }
 
     pub fn load(&self) -> Result<TokenData> {
-        // keyring first
-        if let Ok(json) = self.load_from_keyring() {
+        // File first — avoids OS keychain prompts on every startup.
+        let path = config::token_cache_path();
+        if path.exists() {
+            let json = std::fs::read_to_string(&path)?;
             let data: TokenData = serde_json::from_str(&json)?;
             return Ok(data);
         }
 
-        // file fallback
-        let path = config::token_cache_path();
-        if path.exists() {
-            let json = std::fs::read_to_string(&path)?;
+        // Keyring fallback (migrates old keyring-only tokens).
+        if let Ok(json) = self.load_from_keyring() {
             let data: TokenData = serde_json::from_str(&json)?;
             return Ok(data);
         }
@@ -84,14 +74,6 @@ impl TokenStore {
         let _ = self.delete_from_keyring();
         let path = config::token_cache_path();
         let _ = std::fs::remove_file(path);
-    }
-
-    fn save_to_keyring(&self, json: &str) -> Result<()> {
-        let entry = keyring::Entry::new(&self.service, "default")
-            .map_err(|e| SpotError::Keyring(e.to_string()))?;
-        entry
-            .set_password(json)
-            .map_err(|e| SpotError::Keyring(e.to_string()))
     }
 
     fn load_from_keyring(&self) -> Result<String> {
