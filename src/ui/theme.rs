@@ -40,26 +40,6 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Purple theme — the default.
-    pub fn purple() -> Self {
-        let purple = Color::Rgb(180, 0, 180);
-        let blue = Color::Rgb(0, 200, 200);
-        Theme {
-            active: purple,
-            selected: blue,
-            hovered: blue,
-            inactive: Color::Rgb(128, 128, 128),
-            text: purple,
-            header: purple,
-            error_text: Color::Rgb(255, 100, 100),
-            hint: Color::Rgb(200, 200, 0),
-            playbar_background: Color::Rgb(22, 16, 36),
-            playbar_progress: purple,
-            playbar_progress_text: Color::Rgb(255, 255, 255),
-            playbar_text: purple,
-        }
-    }
-
     /// Default cyan + purple theme.
     pub fn cyan() -> Self {
         let purple = Color::Rgb(180, 0, 180);
