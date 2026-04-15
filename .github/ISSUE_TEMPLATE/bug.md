@@ -23,11 +23,15 @@ labels: bug
 - OS:
 - Terminal:
 - parrotui-spotify version:
-- Audio setup (PipeWire/PulseAudio/ALSA):
+- Audio backend:
 
 ## Logs
 
-<!-- Paste relevant lines from ~/.cache/parrotui-spotify/parrotui-spotify.log.* -->
+<!-- Log location varies by OS:
+  Linux:   ~/.cache/parrotui-spotify/parrotui-spotify.log.*
+  macOS:   ~/Library/Caches/parrotui-spotify/parrotui-spotify.log.*
+  Windows: C:\Users\<username>\AppData\Local\parrotui-spotify\parrotui-spotify.log.*
+-->
 
 ```
 ```
