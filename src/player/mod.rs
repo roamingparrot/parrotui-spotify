@@ -77,10 +77,18 @@ pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Op
             return sync_result(toggle_play_pause(app, engine));
         }
         Action::NextTrack => {
-            return sync_result(engine.next());
+            if let Err(e) = engine.next() {
+                tracing::warn!(%e, "action failed");
+                return None;
+            }
+            return Some(Action::RefreshPlayback);
         }
         Action::PreviousTrack => {
-            return sync_result(engine.prev());
+            if let Err(e) = engine.prev() {
+                tracing::warn!(%e, "action failed");
+                return None;
+            }
+            return Some(Action::RefreshPlayback);
         }
         Action::VolumeUp => {
             return sync_result(adjust_volume(app, engine, 5));
