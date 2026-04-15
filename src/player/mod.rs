@@ -400,15 +400,24 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
                     let v = dev.volume_percent.unwrap_or(app.volume);
                     app.volume = ((v + 2) / 5 * 5).min(100);
                 }
-                if app.now_playing_track.is_none()
-                    && let Some(track) = pb.item
-                {
-                    app.progress
-                        .start(pb.progress_ms.unwrap_or(0), track.duration_ms);
+                if let Some(track) = pb.item {
+                    let is_different = app
+                        .now_playing_track
+                        .as_ref()
+                        .is_none_or(|current| current.uri != track.uri);
+                    if is_different {
+                        app.progress
+                            .start(pb.progress_ms.unwrap_or(0), track.duration_ms);
+                        app.now_playing_track = Some(track);
+                    }
                     if !pb.is_playing {
                         app.progress.pause();
+                    } else if !app.progress.is_playing() {
+                        app.progress.resume();
                     }
-                    app.now_playing_track = Some(track);
+                } else {
+                    app.now_playing_track = None;
+                    app.progress.stop();
                 }
             }
         }
