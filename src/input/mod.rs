@@ -108,6 +108,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             None
         }
 
+        // Copy link
+        KeyCode::Char('C') => Some(Action::CopyLink),
+
         // Playback
         KeyCode::Char(' ') => Some(Action::TogglePlayPause),
         KeyCode::Char('n') => Some(Action::NextTrack),

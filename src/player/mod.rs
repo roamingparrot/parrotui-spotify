@@ -9,6 +9,9 @@ const PAGE_SIZE: u32 = 50;
 
 #[derive(Debug, Clone)]
 pub enum Action {
+    // Clipboard
+    CopyLink,
+
     // Playback — handled locally via Spirc (sync)
     TogglePlayPause,
     NextTrack,
@@ -98,6 +101,11 @@ fn is_spirc_command(action: &Action) -> bool {
 /// Handle an action synchronously if possible. Returns `Some(action)` for
 /// actions that need async dispatch (API calls).
 pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Option<Action> {
+    if matches!(action, Action::CopyLink) {
+        copy_link(app);
+        return None;
+    }
+
     // If we're not the active device and this is a Spirc command,
     // defer it behind a playback transfer.
     if !app.is_active_device && is_spirc_command(&action) {
@@ -565,4 +573,52 @@ fn cycle_repeat(app: &mut App, engine: &PlaybackEngine) -> Result<()> {
 
 fn handle_go_back(app: &mut App) {
     app.focus = FocusPanel::Sidebar;
+}
+
+fn copy_link(app: &mut App) {
+    let uri = match app.focus {
+        FocusPanel::Sidebar => match app.current_sidebar_item() {
+            SidebarItem::LikedSongs => None,
+            SidebarItem::Playlist(pl) => Some(pl.uri.clone()),
+        },
+        FocusPanel::Content => {
+            let tracks = app.content.tracks();
+            let cursor = app.content.cursor();
+            tracks.get(cursor).and_then(|t| t.uri.clone())
+        }
+    };
+
+    let Some(uri) = uri else {
+        app.notify(Notification::info("nothing to copy"));
+        return;
+    };
+
+    let url = spotify_uri_to_url(&uri).unwrap_or(uri);
+
+    if set_clipboard(&url) {
+        app.notify(Notification::info(format!("copied: {url}")));
+    } else {
+        app.notify(Notification::error("clipboard write failed"));
+    }
+}
+
+fn spotify_uri_to_url(uri: &str) -> Option<String> {
+    // spotify:track:ID → https://open.spotify.com/track/ID
+    let mut parts = uri.splitn(3, ':');
+    let prefix = parts.next()?;
+    let kind = parts.next()?;
+    let id = parts.next()?;
+    if prefix != "spotify" {
+        return None;
+    }
+    Some(format!("https://open.spotify.com/{kind}/{id}"))
+}
+
+/// Write text to the system clipboard via OSC 52 escape sequence.
+fn set_clipboard(text: &str) -> bool {
+    use base64::Engine;
+    use std::io::Write;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    let mut out = std::io::stdout();
+    write!(out, "\x1b]52;c;{encoded}\x1b\\").is_ok() && out.flush().is_ok()
 }
