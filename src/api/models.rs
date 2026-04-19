@@ -146,7 +146,6 @@ pub struct CursorPage<T> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Device {
-    #[allow(dead_code)]
     pub id: Option<String>,
     #[allow(dead_code)]
     pub name: String,

@@ -235,6 +235,17 @@ impl SpotifyClient {
         self.put_json(&url, &body).await
     }
 
+    // -- Transfer playback --
+
+    pub async fn transfer_playback(&self, device_id: &str) -> Result<()> {
+        let url = format!("{BASE}/me/player");
+        let body = serde_json::json!({
+            "device_ids": [device_id]
+        });
+        tracing::debug!(%device_id, "PUT transfer playback");
+        self.put_json(&url, &body).await
+    }
+
     // -- Playlists --
 
     pub async fn my_playlists(&self, limit: u32, offset: u32) -> Result<Page<Playlist>> {

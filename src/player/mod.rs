@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::api::{self, SpotifyClient};
 use crate::error::{Result, SpotError};
 use crate::playback::PlaybackEngine;
@@ -28,6 +30,9 @@ pub enum Action {
     #[allow(dead_code)]
     LoadLikedSongs,
     LoadMore,
+
+    // Transfer playback to our device, then replay the deferred Spirc action
+    TransferAndReplay(Box<Action>),
 }
 
 /// Results sent back from spawned async tasks.
@@ -58,6 +63,12 @@ pub enum ActionResult {
         state: Option<api::PlaybackState>,
     },
     PlaybackStarted,
+    TransferCompleted {
+        deferred: Action,
+    },
+    TransferFailed {
+        error: SpotError,
+    },
     Failed {
         error: SpotError,
     },
@@ -69,9 +80,33 @@ pub type ResultTx = tokio::sync::mpsc::UnboundedSender<ActionResult>;
 // Sync path — executes inline, never blocks
 // ---------------------------------------------------------------------------
 
+fn is_spirc_command(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::TogglePlayPause
+            | Action::NextTrack
+            | Action::PreviousTrack
+            | Action::VolumeUp
+            | Action::VolumeDown
+            | Action::SeekForward
+            | Action::SeekBackward
+            | Action::ToggleShuffle
+            | Action::CycleRepeat
+    )
+}
+
 /// Handle an action synchronously if possible. Returns `Some(action)` for
 /// actions that need async dispatch (API calls).
 pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Option<Action> {
+    // If we're not the active device and this is a Spirc command,
+    // defer it behind a playback transfer.
+    if !app.is_active_device && is_spirc_command(&action) {
+        tracing::info!(?action, "device not active, will transfer and replay");
+        app.notify(Notification::info("transferring playback..."));
+        app.is_active_device = true; // optimistic — prevent duplicate transfers
+        return Some(Action::TransferAndReplay(Box::new(action)));
+    }
+
     let result = match action {
         Action::TogglePlayPause => {
             return sync_result(toggle_play_pause(app, engine));
@@ -252,6 +287,19 @@ async fn run_async(
 
         Action::Select => select_async(ctx, client, device_id).await,
 
+        Action::TransferAndReplay(deferred) => {
+            match client.transfer_playback(device_id).await {
+                Ok(()) => {
+                    // Give librespot time to receive the Connect handoff.
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    ActionResult::TransferCompleted {
+                        deferred: *deferred,
+                    }
+                }
+                Err(e) => ActionResult::TransferFailed { error: e },
+            }
+        }
+
         // Sync actions should never reach here
         _ => ActionResult::Failed {
             error: SpotError::Playback("unexpected async dispatch".into()),
@@ -407,6 +455,7 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
                 if let Some(dev) = &pb.device {
                     let v = dev.volume_percent.unwrap_or(app.volume);
                     app.volume = ((v + 2) / 5 * 5).min(100);
+                    app.is_active_device = dev.id.as_deref() == Some(&app.device_id);
                 }
                 if let Some(track) = pb.item {
                     let is_different = app
@@ -430,6 +479,19 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
             }
         }
         ActionResult::PlaybackStarted => {}
+        ActionResult::TransferCompleted { deferred } => {
+            app.is_active_device = true;
+            app.pending_replay_action = Some(deferred);
+        }
+        ActionResult::TransferFailed { error } => {
+            app.is_active_device = false;
+            tracing::warn!(%error, "playback transfer failed");
+            app.notify_error(format!("transfer failed: {error}"));
+            if let SpotError::RateLimited { retry_after_secs } = &error {
+                let backoff = std::time::Duration::from_secs(*retry_after_secs);
+                app.rate_limited_until = Some(std::time::Instant::now() + backoff);
+            }
+        }
         ActionResult::Failed { error } => {
             tracing::warn!(%error, "async action failed");
             if let SpotError::RateLimited { retry_after_secs } = &error {

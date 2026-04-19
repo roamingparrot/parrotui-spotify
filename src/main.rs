@@ -57,7 +57,7 @@ async fn main() -> color_eyre::Result<()> {
     );
 
     let theme = ui::theme::Theme::from_name(&config.theme);
-    let mut app = App::new(config.device_name.clone(), config.initial_volume, theme);
+    let mut app = App::new(config.device_name.clone(), engine.device_id.clone(), config.initial_volume, theme);
 
     // Channel for async action results.
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();
@@ -96,6 +96,19 @@ async fn main() -> color_eyre::Result<()> {
         // Drain async action results (non-blocking).
         while let Ok(result) = action_rx.try_recv() {
             player::apply_result(&mut app, result);
+        }
+
+        // Replay any deferred action from a completed playback transfer.
+        if let Some(replay) = app.pending_replay_action.take() {
+            if let Some(async_action) = player::handle_sync(replay, &mut app, &engine) {
+                player::dispatch_async(
+                    async_action,
+                    &app,
+                    client.clone(),
+                    engine.device_id.clone(),
+                    action_tx.clone(),
+                );
+            }
         }
 
         // Background-load remaining tracks so the full playlist is in memory.

@@ -4,6 +4,7 @@ pub use marquee::MarqueeState;
 
 use crate::api::{Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
 use crate::playback::ProgressTracker;
+use crate::player::Action;
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,6 +149,9 @@ pub struct App {
     pub shuffle: bool,
     pub repeat: RepeatMode,
     pub device_name: String,
+    pub device_id: String,
+    pub is_active_device: bool,
+    pub pending_replay_action: Option<Action>,
 
     // gg combo state
     pub pending_g: bool,
@@ -172,7 +176,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(device_name: String, initial_volume: u8, theme: Theme) -> Self {
+    pub fn new(device_name: String, device_id: String, initial_volume: u8, theme: Theme) -> Self {
         Self {
             running: true,
             focus: FocusPanel::Sidebar,
@@ -189,6 +193,9 @@ impl App {
             shuffle: false,
             repeat: RepeatMode::Off,
             device_name,
+            device_id,
+            is_active_device: false,
+            pending_replay_action: None,
             pending_g: false,
             sidebar_marquee: MarqueeState::new(),
             track_marquee: MarqueeState::new(),
