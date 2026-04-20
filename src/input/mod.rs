@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::player::Action;
-use crate::state::{App, FocusPanel};
+use crate::state::{App, ContentView, FocusPanel};
 
 /// Map a terminal key event to an app action (or None to ignore).
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
@@ -17,6 +17,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             _ => {}
         }
         return None;
+    }
+
+    // Search modal — captures all input when active (unless in a detail drill-down)
+    if app.search.is_some() && !app.search_origin {
+        return handle_search_key(app, key);
     }
 
     // Handle the "gg" combo: if we saw a 'g' press before, check for second 'g'
@@ -43,6 +48,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         // Help
         KeyCode::Char('?') => {
             app.show_help = true;
+            None
+        }
+
+        // Search
+        KeyCode::Char('/') => {
+            app.open_search();
             None
         }
 
@@ -94,7 +105,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
 
         // Back / collapse
         KeyCode::Char('h') | KeyCode::Left => {
-            if app.focus == FocusPanel::Content {
+            if app.search_origin {
+                // Return from search detail view to search results
+                app.search_origin = false;
+                app.content = ContentView::Empty;
+                app.focus = FocusPanel::Sidebar;
+                None
+            } else if app.focus == FocusPanel::Content {
                 Some(Action::GoBack)
             } else {
                 None
@@ -102,10 +119,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         }
 
         KeyCode::Esc => {
-            if app.focus == FocusPanel::Content {
+            if app.search_origin {
+                app.search_origin = false;
+                app.content = ContentView::Empty;
+                None
+            } else if app.focus == FocusPanel::Content {
                 app.focus = FocusPanel::Sidebar;
+                None
+            } else {
+                None
             }
-            None
         }
 
         // Copy link
@@ -123,6 +146,106 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
         KeyCode::Char('r') => Some(Action::CycleRepeat),
 
         _ => None,
+    }
+}
+
+fn handle_search_key(app: &mut App, key: KeyEvent) -> Option<Action> {
+    let input_active = app.search.as_ref().unwrap().input_active;
+
+    if input_active {
+        match key.code {
+            KeyCode::Esc => {
+                let has_results = app.search.as_ref().unwrap().has_results();
+                if has_results {
+                    app.search.as_mut().unwrap().input_active = false;
+                } else {
+                    app.search = None;
+                }
+                None
+            }
+            KeyCode::Enter => {
+                let query = app.search.as_ref().unwrap().query.trim().to_string();
+                if query.is_empty() {
+                    return None;
+                }
+                let search = app.search.as_mut().unwrap();
+                search.loading = true;
+                search.clear_results();
+                Some(Action::SubmitSearch { query })
+            }
+            KeyCode::Char(c) => {
+                app.search.as_mut().unwrap().push_char(c);
+                None
+            }
+            KeyCode::Backspace => {
+                app.search.as_mut().unwrap().pop_char();
+                None
+            }
+            _ => None,
+        }
+    } else {
+        // Results browsing mode — sidebar/content focus model
+        match key.code {
+            KeyCode::Char('/') => {
+                app.search.as_mut().unwrap().input_active = true;
+                None
+            }
+            KeyCode::Char('q') => {
+                app.search = None;
+                None
+            }
+            KeyCode::Tab | KeyCode::BackTab => {
+                app.toggle_focus();
+                None
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if app.focus == FocusPanel::Sidebar {
+                    app.focus = FocusPanel::Content;
+                }
+                None
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                if app.focus == FocusPanel::Content {
+                    app.focus = FocusPanel::Sidebar;
+                }
+                None
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                match app.focus {
+                    FocusPanel::Sidebar => app.search.as_mut().unwrap().sidebar_move_down(),
+                    FocusPanel::Content => app.search.as_mut().unwrap().move_down(),
+                }
+                None
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                match app.focus {
+                    FocusPanel::Sidebar => app.search.as_mut().unwrap().sidebar_move_up(),
+                    FocusPanel::Content => app.search.as_mut().unwrap().move_up(),
+                }
+                None
+            }
+            KeyCode::Enter => match app.focus {
+                FocusPanel::Sidebar => {
+                    app.search.as_mut().unwrap().select_sidebar_item();
+                    app.focus = FocusPanel::Content;
+                    None
+                }
+                FocusPanel::Content => Some(Action::SearchSelect),
+            },
+            KeyCode::Esc => {
+                if app.focus == FocusPanel::Content {
+                    app.focus = FocusPanel::Sidebar;
+                } else {
+                    app.search.as_mut().unwrap().input_active = true;
+                }
+                None
+            }
+            // Playback controls still work in search results
+            KeyCode::Char(' ') => Some(Action::TogglePlayPause),
+            KeyCode::Char('n') => Some(Action::NextTrack),
+            KeyCode::Char('p') => Some(Action::PreviousTrack),
+            _ => None,
+        }
     }
 }
 

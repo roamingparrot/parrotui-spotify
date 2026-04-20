@@ -39,12 +39,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 3 {
+    if inner.height < 2 {
         return;
     }
 
     let rows = Layout::vertical([
-        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
@@ -53,14 +52,13 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     match &app.now_playing_track {
         Some(track) => {
             draw_track_info(frame, track, rows[0], theme);
-            draw_controls(frame, app, rows[1], theme);
-            draw_progress(frame, app, track.duration_ms, rows[2], theme);
+            draw_progress(frame, app, track.duration_ms, rows[1], theme);
         }
         None => {
             let msg = Paragraph::new("Nothing playing")
                 .style(Style::default().fg(theme.inactive))
                 .alignment(Alignment::Center);
-            frame.render_widget(msg, rows[1]);
+            frame.render_widget(msg, rows[0]);
         }
     }
 }
@@ -79,40 +77,6 @@ fn draw_track_info(frame: &mut Frame, track: &crate::api::Track, area: Rect, the
     );
 
     let line = Line::from(vec![name, sep, artist]);
-    let p = Paragraph::new(line).alignment(Alignment::Center);
-    frame.render_widget(p, area);
-}
-
-fn draw_controls(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    let style = Style::default().fg(theme.playbar_text);
-    let active = Style::default()
-        .fg(theme.active)
-        .add_modifier(Modifier::BOLD);
-
-    let shuffle_style = if app.shuffle { active } else { style };
-    let repeat_style = if app.repeat != RepeatMode::Off {
-        active
-    } else {
-        style
-    };
-    let play_icon = if app.progress.is_playing() {
-        "⏸"
-    } else {
-        "▶"
-    };
-
-    let line = Line::from(vec![
-        Span::styled("⏮", style),
-        Span::raw("  "),
-        Span::styled(play_icon, active),
-        Span::raw("  "),
-        Span::styled("⏭", style),
-        Span::raw("    "),
-        Span::styled("🔀", shuffle_style),
-        Span::raw("  "),
-        Span::styled("🔁", repeat_style),
-    ]);
-
     let p = Paragraph::new(line).alignment(Alignment::Center);
     frame.render_widget(p, area);
 }

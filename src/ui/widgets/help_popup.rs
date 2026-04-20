@@ -27,6 +27,7 @@ const BINDINGS: &[(&str, &str)] = &[
     ("s", "Toggle shuffle"),
     ("r", "Cycle repeat"),
     ("", ""),
+    ("/", "Search"),
     ("?", "Toggle help"),
     ("q", "Quit"),
 ];

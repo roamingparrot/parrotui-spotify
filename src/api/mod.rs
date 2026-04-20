@@ -2,10 +2,10 @@ mod models;
 
 pub use models::*;
 
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::error::{Result, SpotError};
 
@@ -13,11 +13,11 @@ const BASE: &str = "https://api.spotify.com/v1";
 const MAX_ATTEMPTS: u8 = 4;
 
 // Rate-limit pacing: enforce minimum interval between API calls.
-static API_PACING: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+static API_PACING: OnceLock<AsyncMutex<Option<Instant>>> = OnceLock::new();
 const MIN_INTERVAL: Duration = Duration::from_millis(250);
 
 async fn pace() {
-    let lock = API_PACING.get_or_init(|| Mutex::new(None));
+    let lock = API_PACING.get_or_init(|| AsyncMutex::new(None));
     let mut last = lock.lock().await;
     if let Some(prev) = *last {
         let elapsed = prev.elapsed();
@@ -31,28 +31,39 @@ async fn pace() {
 #[derive(Clone)]
 pub struct SpotifyClient {
     http: reqwest::Client,
-    token: String,
+    token: Arc<Mutex<String>>,
 }
 
 impl SpotifyClient {
     pub fn new(token: &str) -> Self {
         Self {
             http: reqwest::Client::new(),
-            token: token.to_string(),
+            token: Arc::new(Mutex::new(token.to_string())),
         }
     }
 
-    pub fn set_token(&mut self, token: &str) {
-        self.token = token.to_string();
+    pub fn set_token(&self, token: &str) {
+        *self.token.lock().unwrap() = token.to_string();
+    }
+
+    fn current_token(&self) -> String {
+        self.token.lock().unwrap().clone()
     }
 
     // -- Core request method with pacing + retry --
 
     async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let mut attempt: u8 = 0;
+        let mut retried_auth = false;
         loop {
             pace().await;
-            let resp = match self.http.get(url).bearer_auth(&self.token).send().await {
+            let resp = match self
+                .http
+                .get(url)
+                .bearer_auth(self.current_token())
+                .send()
+                .await
+            {
                 Ok(r) => r,
                 Err(e) if attempt + 1 < MAX_ATTEMPTS && is_transient(&e) => {
                     let backoff = 1 + u64::from(attempt);
@@ -66,6 +77,12 @@ impl SpotifyClient {
             let status = resp.status().as_u16();
             if resp.status().is_success() {
                 return Ok(resp.json().await?);
+            }
+            if status == 401 && !retried_auth {
+                retried_auth = true;
+                tracing::debug!(%url, "401 received, retrying with refreshed token");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
             }
             if status == 429 && attempt + 1 < MAX_ATTEMPTS {
                 let retry = retry_after(&resp);
@@ -93,9 +110,16 @@ impl SpotifyClient {
         url: &str,
     ) -> Result<Option<T>> {
         let mut attempt: u8 = 0;
+        let mut retried_auth = false;
         loop {
             pace().await;
-            let resp = match self.http.get(url).bearer_auth(&self.token).send().await {
+            let resp = match self
+                .http
+                .get(url)
+                .bearer_auth(self.current_token())
+                .send()
+                .await
+            {
                 Ok(r) => r,
                 Err(e) if attempt + 1 < MAX_ATTEMPTS && is_transient(&e) => {
                     let backoff = 1 + u64::from(attempt);
@@ -112,6 +136,12 @@ impl SpotifyClient {
             }
             if resp.status().is_success() {
                 return Ok(Some(resp.json().await?));
+            }
+            if status == 401 && !retried_auth {
+                retried_auth = true;
+                tracing::debug!(%url, "401 received, retrying with refreshed token");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
             }
             if status == 429 && attempt + 1 < MAX_ATTEMPTS {
                 let retry = retry_after(&resp);
@@ -136,12 +166,13 @@ impl SpotifyClient {
 
     async fn put_json(&self, url: &str, body: &serde_json::Value) -> Result<()> {
         let mut attempt: u8 = 0;
+        let mut retried_auth = false;
         loop {
             pace().await;
             let resp = match self
                 .http
                 .put(url)
-                .bearer_auth(&self.token)
+                .bearer_auth(self.current_token())
                 .json(body)
                 .send()
                 .await
@@ -159,6 +190,12 @@ impl SpotifyClient {
             let status = resp.status().as_u16();
             if resp.status().is_success() || status == 204 {
                 return Ok(());
+            }
+            if status == 401 && !retried_auth {
+                retried_auth = true;
+                tracing::debug!(%url, "401 received, retrying with refreshed token");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
             }
             if status == 429 && attempt + 1 < MAX_ATTEMPTS {
                 let retry = retry_after(&resp);
@@ -179,6 +216,14 @@ impl SpotifyClient {
                 message: body,
             });
         }
+    }
+
+    // -- Devices --
+
+    pub async fn get_devices(&self) -> Result<DevicesResponse> {
+        let url = format!("{BASE}/me/player/devices");
+        tracing::debug!(%url, "GET devices");
+        self.get_json(&url).await
     }
 
     // -- Playback state (read-only, used for metadata sync) --
@@ -270,6 +315,40 @@ impl SpotifyClient {
     pub async fn recently_played(&self, limit: u32) -> Result<CursorPage<PlayHistory>> {
         let url = format!("{BASE}/me/player/recently-played?limit={limit}");
         tracing::debug!(%url, "GET recently played");
+        self.get_json(&url).await
+    }
+
+    // -- Search --
+
+    pub async fn search(&self, query: &str, limit: u32) -> Result<SearchResults> {
+        let query_string = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("q", query)
+            .append_pair("type", "track,artist,album,playlist")
+            .append_pair("limit", &limit.to_string())
+            .finish();
+        let url = format!("{BASE}/search?{query_string}");
+        tracing::debug!(%url, "GET search");
+        self.get_json(&url).await
+    }
+
+    // -- Album tracks --
+
+    pub async fn album_tracks(
+        &self,
+        album_id: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Page<AlbumTrack>> {
+        let url = format!("{BASE}/albums/{album_id}/tracks?limit={limit}&offset={offset}");
+        tracing::debug!(%url, %album_id, "GET album tracks");
+        self.get_json(&url).await
+    }
+
+    // -- Artist top tracks --
+
+    pub async fn artist_top_tracks(&self, artist_id: &str) -> Result<ArtistTopTracks> {
+        let url = format!("{BASE}/artists/{artist_id}/top-tracks");
+        tracing::debug!(%url, %artist_id, "GET artist top tracks");
         self.get_json(&url).await
     }
 

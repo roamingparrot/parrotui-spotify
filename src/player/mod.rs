@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::api::{self, SpotifyClient};
 use crate::error::{Result, SpotError};
 use crate::playback::PlaybackEngine;
-use crate::state::{App, ContentView, FocusPanel, Notification, SidebarItem};
+use crate::state::{App, ContentView, FocusPanel, Notification, SearchTab, SidebarItem};
 
 const PAGE_SIZE: u32 = 50;
 
@@ -33,9 +33,30 @@ pub enum Action {
     #[allow(dead_code)]
     LoadLikedSongs,
     LoadMore,
+    CheckDeviceHealth { generation: u64 },
 
     // Transfer playback to our device, then replay the deferred Spirc action
     TransferAndReplay(Box<Action>),
+
+    // Search
+    SubmitSearch { query: String },
+    SearchSelect,
+    LoadAlbumTracks {
+        album_id: String,
+        album_name: String,
+        album_uri: String,
+        artist_name: String,
+    },
+    LoadArtistTopTracks {
+        artist_id: String,
+        artist_name: String,
+        artist_uri: String,
+    },
+    LoadPlaylistFromSearch {
+        playlist_id: String,
+        playlist_name: String,
+        playlist_uri: String,
+    },
 }
 
 /// Results sent back from spawned async tasks.
@@ -71,6 +92,25 @@ pub enum ActionResult {
     },
     TransferFailed {
         error: SpotError,
+    },
+    DeviceHealth {
+        generation: u64,
+        found: bool,
+    },
+    SearchResults {
+        results: api::SearchResults,
+    },
+    AlbumTracks {
+        album_name: String,
+        album_uri: String,
+        artist_name: String,
+        tracks: Vec<api::Track>,
+        total: u32,
+    },
+    ArtistTopTracksResult {
+        artist_name: String,
+        artist_uri: String,
+        tracks: Vec<api::Track>,
     },
     Failed {
         error: SpotError,
@@ -117,7 +157,7 @@ pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Op
 
     let result = match action {
         Action::TogglePlayPause => {
-            return sync_result(toggle_play_pause(app, engine));
+            return sync_result(toggle_play_pause(app, engine), app);
         }
         Action::NextTrack => {
             if let Err(e) = engine.next() {
@@ -134,22 +174,22 @@ pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Op
             return Some(Action::RefreshPlayback);
         }
         Action::VolumeUp => {
-            return sync_result(adjust_volume(app, engine, 5));
+            return sync_result(adjust_volume(app, engine, 5), app);
         }
         Action::VolumeDown => {
-            return sync_result(adjust_volume(app, engine, -5));
+            return sync_result(adjust_volume(app, engine, -5), app);
         }
         Action::SeekForward => {
-            return sync_result(seek_relative(app, engine, 5000));
+            return sync_result(seek_relative(app, engine, 5000), app);
         }
         Action::SeekBackward => {
-            return sync_result(seek_relative(app, engine, -5000));
+            return sync_result(seek_relative(app, engine, -5000), app);
         }
         Action::ToggleShuffle => {
-            return sync_result(toggle_shuffle(app, engine));
+            return sync_result(toggle_shuffle(app, engine), app);
         }
         Action::CycleRepeat => {
-            return sync_result(cycle_repeat(app, engine));
+            return sync_result(cycle_repeat(app, engine), app);
         }
         Action::GoBack => {
             handle_go_back(app);
@@ -159,15 +199,19 @@ pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Op
         // Select has a sync part (state change) + optional async part
         Action::Select => return handle_select_sync(app, engine),
 
+        // SearchSelect — inspect the active tab and dispatch the right async action
+        Action::SearchSelect => return handle_search_select_sync(app),
+
         // Pure async — pass through
         other => other,
     };
     Some(result)
 }
 
-fn sync_result(r: Result<()>) -> Option<Action> {
+fn sync_result(r: Result<()>, app: &mut App) -> Option<Action> {
     if let Err(e) = r {
         tracing::warn!(%e, "action failed");
+        app.notify_error(e);
     }
     None
 }
@@ -194,7 +238,9 @@ fn handle_select_sync(app: &mut App, _engine: &PlaybackEngine) -> Option<Action>
                     // Still need to issue the play API call
                     Some(Action::Select)
                 }
-                ContentView::LikedSongs { cursor, tracks, .. } => {
+                ContentView::LikedSongs { cursor, tracks, .. }
+                | ContentView::AlbumDetail { cursor, tracks, .. }
+                | ContentView::ArtistTopTracks { cursor, tracks, .. } => {
                     if let Some(track) = tracks.get(*cursor) {
                         app.progress.start(0, track.duration_ms);
                         app.now_playing_track = Some(track.clone());
@@ -220,12 +266,18 @@ struct AsyncContext {
     sidebar_can_load_more: bool,
     content_can_load_more: bool,
     content_loaded: u32,
+    search_snapshot: Option<SearchSnapshot>,
 }
 
 enum ContentSnapshot {
     Empty,
     PlaylistDetail { uri: String, cursor: usize },
     LikedSongs { uris: Vec<String>, cursor: usize },
+}
+
+struct SearchSnapshot {
+    track_uris: Vec<String>,
+    track_cursor: usize,
 }
 
 fn snapshot(app: &App) -> AsyncContext {
@@ -239,11 +291,21 @@ fn snapshot(app: &App) -> AsyncContext {
             uri: playlist_uri.clone(),
             cursor: *cursor,
         },
-        ContentView::LikedSongs { tracks, cursor, .. } => ContentSnapshot::LikedSongs {
+        ContentView::LikedSongs { tracks, cursor, .. }
+        | ContentView::AlbumDetail { tracks, cursor, .. }
+        | ContentView::ArtistTopTracks { tracks, cursor, .. } => ContentSnapshot::LikedSongs {
             uris: tracks.iter().filter_map(|t| t.uri.clone()).collect(),
             cursor: *cursor,
         },
     };
+    let search_snapshot = app.search.as_ref().map(|s| SearchSnapshot {
+        track_uris: s
+            .result_tracks
+            .iter()
+            .filter_map(|t| t.uri.clone())
+            .collect(),
+        track_cursor: s.current_cursor(),
+    });
     AsyncContext {
         focus: app.focus,
         sidebar_item: app.current_sidebar_item().clone(),
@@ -252,6 +314,7 @@ fn snapshot(app: &App) -> AsyncContext {
         sidebar_can_load_more: app.sidebar_can_load_more(),
         content_can_load_more: app.content.can_load_more(),
         content_loaded: app.content.len() as u32,
+        search_snapshot,
     }
 }
 
@@ -307,6 +370,101 @@ async fn run_async(
                 Err(e) => ActionResult::TransferFailed { error: e },
             }
         }
+
+        Action::CheckDeviceHealth { generation } => {
+            match client.get_devices().await {
+                Ok(resp) => {
+                    let found = resp
+                        .devices
+                        .iter()
+                        .any(|d| d.id.as_deref() == Some(device_id));
+                    ActionResult::DeviceHealth { generation, found }
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "device health check failed");
+                    ActionResult::DeviceHealth {
+                        generation,
+                        found: true,
+                    }
+                }
+            }
+        }
+
+        Action::SubmitSearch { query } => match client.search(&query, 20).await {
+            Ok(results) => ActionResult::SearchResults { results },
+            Err(e) => ActionResult::Failed { error: e },
+        },
+
+        Action::SearchSelect => {
+            if let Some(snap) = &ctx.search_snapshot {
+                if snap.track_uris.is_empty() {
+                    return ActionResult::PlaybackStarted;
+                }
+                match client
+                    .play_tracks_on(&snap.track_uris, Some(snap.track_cursor), device_id)
+                    .await
+                {
+                    Ok(()) => ActionResult::PlaybackStarted,
+                    Err(e) => ActionResult::Failed { error: e },
+                }
+            } else {
+                ActionResult::PlaybackStarted
+            }
+        }
+
+        Action::LoadAlbumTracks {
+            album_id,
+            album_name,
+            album_uri,
+            artist_name,
+        } => match client.album_tracks(&album_id, 50, 0).await {
+            Ok(page) => {
+                let tracks: Vec<api::Track> = page
+                    .items
+                    .into_iter()
+                    .map(|at| api::Track {
+                        name: at.name,
+                        uri: at.uri,
+                        duration_ms: at.duration_ms,
+                        artists: at.artists,
+                    })
+                    .collect();
+                ActionResult::AlbumTracks {
+                    album_name,
+                    album_uri,
+                    artist_name,
+                    total: page.total,
+                    tracks,
+                }
+            }
+            Err(e) => ActionResult::Failed { error: e },
+        },
+
+        Action::LoadArtistTopTracks {
+            artist_id,
+            artist_name,
+            artist_uri,
+        } => match client.artist_top_tracks(&artist_id).await {
+            Ok(resp) => ActionResult::ArtistTopTracksResult {
+                artist_name,
+                artist_uri,
+                tracks: resp.tracks,
+            },
+            Err(e) => ActionResult::Failed { error: e },
+        },
+
+        Action::LoadPlaylistFromSearch {
+            playlist_id,
+            playlist_name,
+            playlist_uri,
+        } => match client.playlist_tracks(&playlist_id, PAGE_SIZE, 0).await {
+            Ok(page) => ActionResult::PlaylistTracks {
+                name: playlist_name,
+                uri: playlist_uri,
+                page,
+            },
+            Err(e) => ActionResult::Failed { error: e },
+        },
 
         // Sync actions should never reach here
         _ => ActionResult::Failed {
@@ -434,8 +592,12 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
             app.set_sidebar_playlists(items, total);
         }
         ActionResult::PlaylistTracks { name, uri, page } => {
+            let from_search = app.search.is_some();
             app.set_playlist_tracks(name, uri, page);
             app.focus = FocusPanel::Content;
+            if from_search {
+                app.search_origin = true;
+            }
         }
         ActionResult::LikedSongs { page } => {
             app.set_liked_songs(page);
@@ -460,17 +622,26 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
             if let Some(pb) = state {
                 app.shuffle = pb.shuffle_state.unwrap_or(false);
                 app.repeat = pb.repeat_mode();
+
+                // Check if playback is on a different device.
+                let our_device = pb
+                    .device
+                    .as_ref()
+                    .and_then(|d| d.id.as_deref())
+                    .is_some_and(|id| id == app.device_id);
+
                 if let Some(dev) = &pb.device {
                     let v = dev.volume_percent.unwrap_or(app.volume);
                     app.volume = ((v + 2) / 5 * 5).min(100);
                     app.is_active_device = dev.id.as_deref() == Some(&app.device_id);
                 }
+
                 if let Some(track) = pb.item {
                     let is_different = app
                         .now_playing_track
                         .as_ref()
                         .is_none_or(|current| current.uri != track.uri);
-                    if is_different {
+                    if is_different || !our_device {
                         app.progress
                             .start(pb.progress_ms.unwrap_or(0), track.duration_ms);
                         app.now_playing_track = Some(track);
@@ -500,8 +671,83 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
                 app.rate_limited_until = Some(std::time::Instant::now() + backoff);
             }
         }
+        ActionResult::SearchResults { results } => {
+            if let Some(search) = &mut app.search {
+                search.loading = false;
+                search.input_active = false;
+                if let Some(page) = results.tracks {
+                    search.result_tracks = page.items;
+                }
+                if let Some(page) = results.artists {
+                    search.result_artists = page.items;
+                }
+                if let Some(page) = results.albums {
+                    search.result_albums = page.items;
+                }
+                if let Some(page) = results.playlists {
+                    search.result_playlists = page.items;
+                }
+                search.tab_cursors = [0; 4];
+                search.tab_scroll_offsets = [0; 4];
+                for tab in SearchTab::ALL {
+                    let has = match tab {
+                        SearchTab::Tracks => !search.result_tracks.is_empty(),
+                        SearchTab::Artists => !search.result_artists.is_empty(),
+                        SearchTab::Albums => !search.result_albums.is_empty(),
+                        SearchTab::Playlists => !search.result_playlists.is_empty(),
+                    };
+                    if has {
+                        search.active_tab = tab;
+                        search.sidebar_cursor = tab as usize;
+                        break;
+                    }
+                }
+            }
+            app.focus = FocusPanel::Sidebar;
+        }
+        ActionResult::AlbumTracks {
+            album_name,
+            album_uri,
+            artist_name,
+            tracks,
+            total,
+        } => {
+            app.set_album_detail(album_name, album_uri, artist_name, tracks, total);
+            app.focus = FocusPanel::Content;
+        }
+        ActionResult::ArtistTopTracksResult {
+            artist_name,
+            artist_uri,
+            tracks,
+        } => {
+            app.set_artist_top_tracks(artist_name, artist_uri, tracks);
+            app.focus = FocusPanel::Content;
+        }
+        ActionResult::DeviceHealth { generation, found } => {
+            if generation != app.engine_generation {
+                tracing::debug!(
+                    result_gen = generation,
+                    current_gen = app.engine_generation,
+                    "discarding stale health check result"
+                );
+                return;
+            }
+            if !found {
+                tracing::warn!("device not found in Spotify devices list, requesting restart");
+                app.device_restart_pending = true;
+                app.notify(Notification::error("device disconnected, reconnecting..."));
+            } else {
+                app.restart_failure_count = 0;
+            }
+        }
         ActionResult::Failed { error } => {
             tracing::warn!(%error, "async action failed");
+            if let SpotError::Api { status: 404, ref message } = error
+                && (message.contains("Device not found") || message.contains("device"))
+            {
+                tracing::warn!("404 device not found, requesting restart");
+                app.device_restart_pending = true;
+            }
             if let SpotError::RateLimited { retry_after_secs } = &error {
                 let backoff = std::time::Duration::from_secs(*retry_after_secs);
                 app.rate_limited_until = Some(std::time::Instant::now() + backoff);
@@ -572,7 +818,57 @@ fn cycle_repeat(app: &mut App, engine: &PlaybackEngine) -> Result<()> {
 }
 
 fn handle_go_back(app: &mut App) {
-    app.focus = FocusPanel::Sidebar;
+    if app.search_origin {
+        app.search_origin = false;
+        app.content = ContentView::Empty;
+        if let Some(search) = &mut app.search {
+            search.input_active = false;
+        }
+    } else {
+        app.focus = FocusPanel::Sidebar;
+    }
+}
+
+fn handle_search_select_sync(app: &mut App) -> Option<Action> {
+    let search = app.search.as_ref()?;
+    let tab = search.active_tab;
+    let cursor = search.current_cursor();
+
+    match tab {
+        SearchTab::Tracks => {
+            if let Some(track) = search.result_tracks.get(cursor) {
+                app.progress.start(0, track.duration_ms);
+                app.now_playing_track = Some(track.clone());
+                app.notify(Notification::info("playing"));
+            }
+            Some(Action::SearchSelect)
+        }
+        SearchTab::Albums => {
+            let album = search.result_albums.get(cursor)?;
+            Some(Action::LoadAlbumTracks {
+                album_id: album.id.clone(),
+                album_name: album.name.clone(),
+                album_uri: album.uri.clone(),
+                artist_name: album.artist_names(),
+            })
+        }
+        SearchTab::Artists => {
+            let artist = search.result_artists.get(cursor)?;
+            Some(Action::LoadArtistTopTracks {
+                artist_id: artist.id.clone(),
+                artist_name: artist.name.clone(),
+                artist_uri: artist.uri.clone(),
+            })
+        }
+        SearchTab::Playlists => {
+            let pl = search.result_playlists.get(cursor)?;
+            Some(Action::LoadPlaylistFromSearch {
+                playlist_id: pl.id.clone(),
+                playlist_name: pl.name.clone(),
+                playlist_uri: pl.uri.clone(),
+            })
+        }
+    }
 }
 
 fn copy_link(app: &mut App) {

@@ -42,22 +42,31 @@ async fn main() -> color_eyre::Result<()> {
         "oauth token ready"
     );
 
-    let mut client = api::SpotifyClient::new(&token_data.access_token);
+    let client = api::SpotifyClient::new(&token_data.access_token);
     let token_store = TokenStore::new();
     let _ = token_store.save(&token_data);
+
+    // Device ID is deterministic from the device name — compute it once.
+    let device_id = playback::device_id_from_name(&config.device_name);
 
     // Streaming engine — uses separate credentials (spotify-player's client_id
     // via librespot-oauth, cached after first auth).
     eprintln!("Starting playback engine...");
-    let engine = playback::PlaybackEngine::start(&config).await?;
-    let mut player_events = engine.get_event_channel();
+    let mut engine: Option<playback::PlaybackEngine> =
+        Some(playback::PlaybackEngine::start(&config).await?);
+    let mut player_events = engine.as_ref().unwrap().get_event_channel();
     eprintln!(
         "Device '{}' ready (id: {})",
-        config.device_name, engine.device_id
+        config.device_name, device_id
     );
 
     let theme = ui::theme::Theme::from_name(&config.theme);
-    let mut app = App::new(config.device_name.clone(), engine.device_id.clone(), config.initial_volume, theme);
+    let mut app = App::new(
+        config.device_name.clone(),
+        device_id.clone(),
+        config.initial_volume,
+        theme,
+    );
 
     // Channel for async action results.
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();
@@ -67,14 +76,14 @@ async fn main() -> color_eyre::Result<()> {
         Action::LoadPlaylists,
         &app,
         client.clone(),
-        engine.device_id.clone(),
+        device_id.clone(),
         action_tx.clone(),
     );
     player::dispatch_async(
         Action::RefreshPlayback,
         &app,
         client.clone(),
-        engine.device_id.clone(),
+        device_id.clone(),
         action_tx.clone(),
     );
 
@@ -87,6 +96,8 @@ async fn main() -> color_eyre::Result<()> {
     let tick_rate = config.tick_rate();
     let refresh_interval = Duration::from_secs(config.refresh_interval_secs);
     let mut last_refresh = Instant::now();
+    let health_check_interval = Duration::from_secs(60);
+    let mut last_health_check = Instant::now();
 
     loop {
         app.clear_stale_notification();
@@ -100,14 +111,53 @@ async fn main() -> color_eyre::Result<()> {
 
         // Replay any deferred action from a completed playback transfer.
         if let Some(replay) = app.pending_replay_action.take() {
-            if let Some(async_action) = player::handle_sync(replay, &mut app, &engine) {
+            if let Some(ref eng) = engine
+                && let Some(async_action) = player::handle_sync(replay, &mut app, eng)
+            {
                 player::dispatch_async(
                     async_action,
                     &app,
                     client.clone(),
-                    engine.device_id.clone(),
+                    device_id.clone(),
                     action_tx.clone(),
                 );
+            }
+        }
+
+        // Restart the playback engine if the device health check flagged it as stale.
+        if app.device_restart_pending {
+            app.device_restart_pending = false;
+            if app.restart_failure_count >= 3 {
+                tracing::error!("too many restart failures, waiting for next health check");
+                app.notify(state::Notification::error(
+                    "device reconnect failed repeatedly",
+                ));
+            } else {
+                if let Some(old) = engine.take() {
+                    old.shutdown();
+                }
+                match playback::PlaybackEngine::start(&config).await {
+                    Ok(new_engine) => {
+                        player_events = new_engine.get_event_channel();
+                        engine = Some(new_engine);
+                        app.engine_generation += 1;
+                        app.restart_failure_count = 0;
+                        app.notify(state::Notification::info("device reconnected"));
+                        tracing::info!(gen = app.engine_generation, "engine restarted");
+                        player::dispatch_async(
+                            Action::RefreshPlayback,
+                            &app,
+                            client.clone(),
+                            device_id.clone(),
+                            action_tx.clone(),
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(%e, "engine restart failed");
+                        app.restart_failure_count += 1;
+                        app.notify_error(format!("reconnect failed: {e}"));
+                    }
+                }
             }
         }
 
@@ -117,7 +167,7 @@ async fn main() -> color_eyre::Result<()> {
                 Action::LoadMore,
                 &app,
                 client.clone(),
-                engine.device_id.clone(),
+                device_id.clone(),
                 action_tx.clone(),
             );
             app.content.set_loading();
@@ -135,13 +185,14 @@ async fn main() -> color_eyre::Result<()> {
                 }
                 had_input = true;
                 if let Some(action) = input::handle_key(&mut app, key)
-                    && let Some(async_action) = player::handle_sync(action, &mut app, &engine)
+                    && let Some(ref eng) = engine
+                    && let Some(async_action) = player::handle_sync(action, &mut app, eng)
                 {
                     player::dispatch_async(
                         async_action,
                         &app,
                         client.clone(),
-                        engine.device_id.clone(),
+                        device_id.clone(),
                         action_tx.clone(),
                     );
                 }
@@ -190,7 +241,7 @@ async fn main() -> color_eyre::Result<()> {
                     Action::LoadPlaylists,
                     &app,
                     client.clone(),
-                    engine.device_id.clone(),
+                    device_id.clone(),
                     action_tx.clone(),
                 );
             }
@@ -199,14 +250,40 @@ async fn main() -> color_eyre::Result<()> {
                 Action::RefreshPlayback,
                 &app,
                 client.clone(),
-                engine.device_id.clone(),
+                device_id.clone(),
                 action_tx.clone(),
             );
             last_refresh = Instant::now();
         }
+
+        // Periodic device health check — verify we're still registered.
+        if rate_ok
+            && last_health_check.elapsed() >= health_check_interval
+            && engine.is_some()
+            && !app.device_restart_pending
+        {
+            let recently_active = app
+                .last_player_event_at
+                .is_some_and(|t| t.elapsed() < health_check_interval);
+
+            if !recently_active {
+                player::dispatch_async(
+                    Action::CheckDeviceHealth {
+                        generation: app.engine_generation,
+                    },
+                    &app,
+                    client.clone(),
+                    device_id.clone(),
+                    action_tx.clone(),
+                );
+            }
+            last_health_check = Instant::now();
+        }
     }
 
-    engine.shutdown();
+    if let Some(eng) = engine {
+        eng.shutdown();
+    }
     terminal::disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
     terminal.show_cursor()?;
@@ -221,22 +298,31 @@ fn process_player_events(
     events: &mut librespot_playback::player::PlayerEventChannel,
 ) {
     while let Ok(event) = events.try_recv() {
+        app.last_player_event_at = Some(std::time::Instant::now());
         match event {
             PlayerEvent::Playing {
                 position_ms,
                 track_id,
                 ..
             } => {
-                if let Some(track) = &app.now_playing_track {
+                let new_uri = track_id.to_uri();
+                let same_track = app
+                    .now_playing_track
+                    .as_ref()
+                    .and_then(|t| t.uri.as_deref())
+                    .is_some_and(|uri| uri == new_uri);
+
+                if same_track {
+                    let dur = app.now_playing_track.as_ref().unwrap().duration_ms;
+                    app.progress.start(position_ms as u64, dur);
+                } else if let Some(track) = app.find_track_by_uri(&new_uri) {
                     app.progress.start(position_ms as u64, track.duration_ms);
+                    app.now_playing_track = Some(track);
                 } else {
-                    let uri = track_id.to_uri();
-                    if let Some(track) = app.find_track_by_uri(&uri) {
-                        app.progress.start(position_ms as u64, track.duration_ms);
-                        app.now_playing_track = Some(track);
-                    } else {
-                        app.progress.start(position_ms as u64, 0);
-                    }
+                    // Track not in current playlist (queue, radio, external change).
+                    // Clear stale info — next RefreshPlayback fills it from the API.
+                    app.now_playing_track = None;
+                    app.progress.start(position_ms as u64, 0);
                 }
             }
             PlayerEvent::Paused { position_ms, .. } => {

@@ -34,7 +34,6 @@ const STREAMING_SCOPES: [&str; 6] = [
 pub struct PlaybackEngine {
     spirc: Spirc,
     player: Arc<Player>,
-    pub device_id: String,
 }
 
 impl PlaybackEngine {
@@ -108,11 +107,7 @@ impl PlaybackEngine {
 
         tracing::info!(name = %config.device_name, "registered as Spotify Connect device");
 
-        Ok(Self {
-            spirc,
-            player,
-            device_id,
-        })
+        Ok(Self { spirc, player })
     }
 
     pub fn play(&self) -> Result<()> {
@@ -128,6 +123,9 @@ impl PlaybackEngine {
     }
 
     pub fn prev(&self) -> Result<()> {
+        // Seek to start first so Spirc always goes to the previous track
+        // instead of restarting the current one.
+        let _ = self.spirc.set_position_ms(0);
         self.spirc.prev().map_err(spirc_err)
     }
 
@@ -205,7 +203,7 @@ fn spirc_err(e: librespot_core::Error) -> SpotError {
     SpotError::Playback(format!("spirc: {e}"))
 }
 
-fn device_id_from_name(name: &str) -> String {
+pub fn device_id_from_name(name: &str) -> String {
     use sha2::{Digest, Sha256};
     let hash = Sha256::digest(name.as_bytes());
     hash.iter().map(|b| format!("{b:02x}")).collect()

@@ -156,3 +156,95 @@ pub struct Device {
     pub device_type: String,
     pub volume_percent: Option<u8>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DevicesResponse {
+    pub devices: Vec<Device>,
+}
+
+// -- Search --
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Image {
+    #[allow(dead_code)]
+    pub url: String,
+    #[allow(dead_code)]
+    pub width: Option<u32>,
+    #[allow(dead_code)]
+    pub height: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FullArtist {
+    pub id: String,
+    pub name: String,
+    pub uri: String,
+    #[serde(default)]
+    pub genres: Vec<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub images: Vec<Image>,
+}
+
+impl FullArtist {
+    pub fn genre_string(&self) -> String {
+        if self.genres.is_empty() {
+            String::new()
+        } else {
+            self.genres.join(", ")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Album {
+    pub id: String,
+    pub name: String,
+    pub uri: String,
+    #[serde(default)]
+    pub artists: Vec<Artist>,
+    #[serde(default)]
+    pub total_tracks: u32,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub images: Vec<Image>,
+}
+
+impl Album {
+    pub fn artist_names(&self) -> String {
+        self.artists
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AlbumTrack {
+    pub name: String,
+    pub uri: Option<String>,
+    #[serde(default)]
+    pub duration_ms: u64,
+    #[serde(default)]
+    pub artists: Vec<Artist>,
+    #[allow(dead_code)]
+    pub track_number: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ArtistTopTracks {
+    pub tracks: Vec<Track>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchResults {
+    #[serde(default)]
+    pub tracks: Option<Page<Track>>,
+    #[serde(default)]
+    pub artists: Option<Page<FullArtist>>,
+    #[serde(default)]
+    pub albums: Option<Page<Album>>,
+    #[serde(default)]
+    pub playlists: Option<Page<Playlist>>,
+}
