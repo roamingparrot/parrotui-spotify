@@ -1,6 +1,6 @@
 [package]
 name = "parrotui-spotify"
-version = "0.3.0"
+version = "0.39.0"
 edition = "2024"
 authors = ["parrotui contributors"]
 description = "A keyboard-driven Spotify client for the terminal"
