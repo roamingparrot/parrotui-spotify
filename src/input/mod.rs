@@ -191,7 +191,7 @@ fn handle_search_key(app: &mut App, key: KeyEvent) -> Option<Action> {
                 None
             }
             KeyCode::Char('q') => {
-                app.search = None;
+                app.close_search();
                 None
             }
             KeyCode::Tab | KeyCode::BackTab => {
@@ -236,7 +236,9 @@ fn handle_search_key(app: &mut App, key: KeyEvent) -> Option<Action> {
                 if app.focus == FocusPanel::Content {
                     app.focus = FocusPanel::Sidebar;
                 } else {
-                    app.search.as_mut().unwrap().input_active = true;
+                    // Sidebar is the outermost search level — leave search
+                    // entirely. Re-enter the query input with '/' instead.
+                    app.close_search();
                 }
                 None
             }
