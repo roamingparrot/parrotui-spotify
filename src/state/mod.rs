@@ -2,9 +2,7 @@ pub mod marquee;
 
 pub use marquee::MarqueeState;
 
-use crate::api::{
-    Album, FullArtist, Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track,
-};
+use crate::api::{Album, FullArtist, Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
 use crate::playback::ProgressTracker;
 use crate::player::Action;
 use crate::ui::theme::Theme;
@@ -20,12 +18,7 @@ pub enum SearchTab {
 }
 
 impl SearchTab {
-    pub const ALL: [SearchTab; 4] = [
-        Self::Tracks,
-        Self::Artists,
-        Self::Albums,
-        Self::Playlists,
-    ];
+    pub const ALL: [SearchTab; 4] = [Self::Tracks, Self::Artists, Self::Albums, Self::Playlists];
 
     pub fn next(self) -> Self {
         match self {

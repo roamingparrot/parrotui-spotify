@@ -25,7 +25,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         let outer = Layout::vertical([
             Constraint::Length(margin),
             Constraint::Length(3), // search bar
-            Constraint::Min(0),   // main content area
+            Constraint::Min(0),    // main content area
             Constraint::Length(5), // playbar
             Constraint::Length(1), // status line
             Constraint::Length(margin),
@@ -36,8 +36,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         search_bar::draw(frame, search, outer[1], &theme);
 
         let sidebar_w = (area.width / 5).max(20);
-        let main = Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(0)])
-            .split(outer[2]);
+        let main =
+            Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(0)]).split(outer[2]);
 
         // Always show search category sidebar while search is active
         let sidebar_focused = app.focus == FocusPanel::Sidebar && !app.search_origin;
@@ -66,8 +66,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         .split(area);
 
         let sidebar_w = (area.width / 5).max(20);
-        let main = Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(0)])
-            .split(outer[1]);
+        let main =
+            Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(0)]).split(outer[1]);
 
         sidebar::draw(frame, app, main[0], &theme);
         draw_content(frame, app, main[1], &theme);

@@ -55,10 +55,7 @@ async fn main() -> color_eyre::Result<()> {
     let mut engine: Option<playback::PlaybackEngine> =
         Some(playback::PlaybackEngine::start(&config).await?);
     let mut player_events = engine.as_ref().unwrap().get_event_channel();
-    eprintln!(
-        "Device '{}' ready (id: {})",
-        config.device_name, device_id
-    );
+    eprintln!("Device '{}' ready (id: {})", config.device_name, device_id);
 
     let theme = ui::theme::Theme::from_name(&config.theme);
     let mut app = App::new(
