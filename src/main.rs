@@ -107,18 +107,17 @@ async fn main() -> color_eyre::Result<()> {
         }
 
         // Replay any deferred action from a completed playback transfer.
-        if let Some(replay) = app.pending_replay_action.take() {
-            if let Some(ref eng) = engine
-                && let Some(async_action) = player::handle_sync(replay, &mut app, eng)
-            {
-                player::dispatch_async(
-                    async_action,
-                    &app,
-                    client.clone(),
-                    device_id.clone(),
-                    action_tx.clone(),
-                );
-            }
+        if let Some(replay) = app.pending_replay_action.take()
+            && let Some(ref eng) = engine
+            && let Some(async_action) = player::handle_sync(replay, &mut app, eng)
+        {
+            player::dispatch_async(
+                async_action,
+                &app,
+                client.clone(),
+                device_id.clone(),
+                action_tx.clone(),
+            );
         }
 
         // Restart the playback engine if the device health check flagged it as stale.
