@@ -654,8 +654,18 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
                         app.progress.resume();
                     }
                 } else {
-                    app.now_playing_track = None;
-                    app.progress.stop();
+                    // A RefreshPlayback poll in flight when a track ended can
+                    // return item=None for the brief inter-track gap, arriving
+                    // after PlayerEvent::Playing already set up the next track.
+                    // Don't let that stale snapshot blank the playbar — only
+                    // clear if no player event has fired recently.
+                    let recent_player_event = app
+                        .last_player_event_at
+                        .is_some_and(|t| t.elapsed() < Duration::from_secs(3));
+                    if !recent_player_event {
+                        app.now_playing_track = None;
+                        app.progress.stop();
+                    }
                 }
             }
         }
@@ -743,6 +753,13 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
             }
         }
         ActionResult::Failed { error } => {
+            // Reset loading so a failed LoadMore can be retried next tick.
+            match &mut app.content {
+                ContentView::PlaylistDetail { loading, .. }
+                | ContentView::LikedSongs { loading, .. }
+                | ContentView::AlbumDetail { loading, .. } => *loading = false,
+                _ => {}
+            }
             tracing::warn!(%error, "async action failed");
             if let SpotError::Api {
                 status: 404,
