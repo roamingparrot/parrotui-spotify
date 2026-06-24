@@ -34,6 +34,7 @@ const STREAMING_SCOPES: [&str; 6] = [
 pub struct PlaybackEngine {
     spirc: Spirc,
     player: Arc<Player>,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl PlaybackEngine {
@@ -103,11 +104,15 @@ impl PlaybackEngine {
         .await
         .map_err(|e| SpotError::Session(format!("spirc init: {e}")))?;
 
-        tokio::spawn(spirc_task);
+        let task = tokio::spawn(spirc_task);
 
         tracing::info!(name = %config.device_name, "registered as Spotify Connect device");
 
-        Ok(Self { spirc, player })
+        Ok(Self {
+            spirc,
+            player,
+            task,
+        })
     }
 
     pub fn play(&self) -> Result<()> {
@@ -154,8 +159,15 @@ impl PlaybackEngine {
         self.player.get_player_event_channel()
     }
 
+    /// Returns true if the Spirc background task has exited, which means the
+    /// librespot session has dropped and any further commands will fail.
+    pub fn is_spirc_dead(&self) -> bool {
+        self.task.is_finished()
+    }
+
     pub fn shutdown(self) {
         let _ = self.spirc.shutdown();
+        self.task.abort();
     }
 }
 

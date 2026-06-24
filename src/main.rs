@@ -120,6 +120,17 @@ async fn main() -> color_eyre::Result<()> {
             );
         }
 
+        // Detect a dead spirc task immediately rather than waiting for the
+        // 60-second health check. When the task exits the session has dropped
+        // and any Spirc command will return "channel closed".
+        if let Some(ref eng) = engine
+            && eng.is_spirc_dead()
+            && !app.device_restart_pending
+        {
+            tracing::warn!("spirc task exited unexpectedly, scheduling restart");
+            app.device_restart_pending = true;
+        }
+
         // Restart the playback engine if the device health check flagged it as stale.
         if app.device_restart_pending {
             app.device_restart_pending = false;
