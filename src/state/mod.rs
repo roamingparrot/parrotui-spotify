@@ -632,9 +632,11 @@ impl App {
 
     pub fn open_search(&mut self) {
         self.search = Some(SearchState::new());
+        // A drill-down view may still be marked as search-origin; clear it so
+        // the new search modal captures input.
+        self.search_origin = false;
     }
 
-    #[allow(dead_code)]
     pub fn close_search(&mut self) {
         self.search = None;
         self.search_origin = false;
