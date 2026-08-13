@@ -638,8 +638,16 @@ impl App {
     }
 
     pub fn close_search(&mut self) {
+        // Returning home: drop the search modal and put focus back on the
+        // sidebar. Search results live in `self.search` (not `self.content`),
+        // so leaving focus on Content would strand the cursor on whatever the
+        // content panel holds — an empty home screen or a stale drill-down.
+        if self.search_origin {
+            self.content = ContentView::Empty;
+        }
         self.search = None;
         self.search_origin = false;
+        self.focus = FocusPanel::Sidebar;
     }
 
     pub fn set_album_detail(
