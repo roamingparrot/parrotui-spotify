@@ -33,13 +33,17 @@ pub enum Action {
     #[allow(dead_code)]
     LoadLikedSongs,
     LoadMore,
-    CheckDeviceHealth { generation: u64 },
+    CheckDeviceHealth {
+        generation: u64,
+    },
 
     // Transfer playback to our device, then replay the deferred Spirc action
     TransferAndReplay(Box<Action>),
 
     // Search
-    SubmitSearch { query: String },
+    SubmitSearch {
+        query: String,
+    },
     SearchSelect,
     LoadAlbumTracks {
         album_id: String,
@@ -371,24 +375,22 @@ async fn run_async(
             }
         }
 
-        Action::CheckDeviceHealth { generation } => {
-            match client.get_devices().await {
-                Ok(resp) => {
-                    let found = resp
-                        .devices
-                        .iter()
-                        .any(|d| d.id.as_deref() == Some(device_id));
-                    ActionResult::DeviceHealth { generation, found }
-                }
-                Err(e) => {
-                    tracing::warn!(%e, "device health check failed");
-                    ActionResult::DeviceHealth {
-                        generation,
-                        found: true,
-                    }
+        Action::CheckDeviceHealth { generation } => match client.get_devices().await {
+            Ok(resp) => {
+                let found = resp
+                    .devices
+                    .iter()
+                    .any(|d| d.id.as_deref() == Some(device_id));
+                ActionResult::DeviceHealth { generation, found }
+            }
+            Err(e) => {
+                tracing::warn!(%e, "device health check failed");
+                ActionResult::DeviceHealth {
+                    generation,
+                    found: true,
                 }
             }
-        }
+        },
 
         Action::SubmitSearch { query } => match client.search(&query, 20).await {
             Ok(results) => ActionResult::SearchResults { results },
@@ -742,7 +744,10 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
         }
         ActionResult::Failed { error } => {
             tracing::warn!(%error, "async action failed");
-            if let SpotError::Api { status: 404, ref message } = error
+            if let SpotError::Api {
+                status: 404,
+                ref message,
+            } = error
                 && (message.contains("Device not found") || message.contains("device"))
             {
                 tracing::warn!("404 device not found, requesting restart");

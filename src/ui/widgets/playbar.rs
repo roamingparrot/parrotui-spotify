@@ -43,11 +43,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         return;
     }
 
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .split(inner);
+    let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(inner);
 
     match &app.now_playing_track {
         Some(track) => {
