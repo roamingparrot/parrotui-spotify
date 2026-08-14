@@ -4,6 +4,7 @@ pub use marquee::MarqueeState;
 
 use crate::api::{Album, FullArtist, Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
 use crate::config::Config;
+use crate::input::{Key, Keymap};
 use crate::playback::ProgressTracker;
 use crate::player::Action;
 use crate::ui::theme::Theme;
@@ -361,8 +362,9 @@ pub struct App {
     pub is_active_device: bool,
     pub pending_replay_action: Option<Action>,
 
-    // gg combo state
-    pub pending_g: bool,
+    // Keys pressed so far towards an unfinished chord (e.g. the first 'g' of gg)
+    pub keymap: Keymap,
+    pub pending_keys: Vec<Key>,
 
     // Marquee scroll state
     pub sidebar_marquee: MarqueeState,
@@ -418,7 +420,8 @@ impl App {
             device_id,
             is_active_device: false,
             pending_replay_action: None,
-            pending_g: false,
+            keymap: Keymap::default(),
+            pending_keys: Vec::new(),
             sidebar_marquee: MarqueeState::new(),
             track_marquee: MarqueeState::new(),
             sidebar_scroll_offset: 0,

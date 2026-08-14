@@ -1,70 +1,109 @@
+pub mod keymap;
+
+pub use keymap::{Command, Key, Keymap, Mode};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::player::Action;
 use crate::state::{App, ContentView, FocusPanel};
+use keymap::Lookup;
 
 /// Map a terminal key event to an app action (or None to ignore).
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
     // Any keypress cancels a pending jump-to-bottom chain.
     app.pending_jump_to_bottom = false;
 
-    // Help popup is modal — only Esc/q/?/Enter dismiss it
-    if app.show_help {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') | KeyCode::Enter => {
-                app.show_help = false;
-            }
-            _ => {}
-        }
+    // Ctrl+C always quits — a broken keybindings.toml must not be able to trap
+    // the user in a mode with no reachable exit.
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.running = false;
         return None;
     }
 
-    // Search modal — captures all input when active (unless in a detail drill-down)
-    if app.search.is_some() && !app.search_origin {
-        return handle_search_key(app, key);
+    let mode = current_mode(app);
+
+    // In the query input every printable character is text, so it can't be a
+    // binding. Modifier combinations still fall through to the keymap.
+    if mode == Mode::SearchInput
+        && let KeyCode::Char(c) = key.code
+        && key.modifiers.difference(KeyModifiers::SHIFT).is_empty()
+    {
+        app.search.as_mut().unwrap().push_char(c);
+        return None;
     }
 
-    // Handle the "gg" combo: if we saw a 'g' press before, check for second 'g'
-    if app.pending_g {
-        app.pending_g = false;
-        if key.code == KeyCode::Char('g') {
-            app.jump_to_top();
-            return None;
+    let pressed = Key::from_event(key);
+    let pending = std::mem::take(&mut app.pending_keys);
+
+    match app.keymap.lookup(mode, &pending, pressed) {
+        Lookup::Command(cmd) => run_command(app, cmd),
+        Lookup::Pending => {
+            app.pending_keys = pending;
+            app.pending_keys.push(pressed);
+            None
         }
-        // Not a second 'g' — fall through to normal handling
+        // An abandoned chord shouldn't swallow the key that abandoned it —
+        // 'g' then 'j' still moves down.
+        Lookup::None if !pending.is_empty() => match app.keymap.lookup(mode, &[], pressed) {
+            Lookup::Command(cmd) => run_command(app, cmd),
+            Lookup::Pending => {
+                app.pending_keys.push(pressed);
+                None
+            }
+            Lookup::None => None,
+        },
+        Lookup::None => None,
     }
+}
 
-    match key.code {
-        // Quit
-        KeyCode::Char('q') => {
+fn current_mode(app: &App) -> Mode {
+    if app.show_help {
+        return Mode::Help;
+    }
+    // A drill-down opened from search is navigated like the main view.
+    match &app.search {
+        Some(search) if !app.search_origin => {
+            if search.input_active {
+                Mode::SearchInput
+            } else {
+                Mode::Search
+            }
+        }
+        _ => Mode::Normal,
+    }
+}
+
+fn run_command(app: &mut App, cmd: Command) -> Option<Action> {
+    match cmd {
+        Command::Quit => {
             app.running = false;
             None
         }
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.running = false;
-            None
-        }
-
-        // Help
-        KeyCode::Char('?') => {
+        Command::ToggleHelp => {
             app.show_help = true;
             None
         }
-
-        // Search
-        KeyCode::Char('/') => {
+        Command::CloseHelp => {
+            app.show_help = false;
+            None
+        }
+        Command::OpenSearch => {
             app.open_search();
             None
         }
-
-        // Focus switching
-        KeyCode::Tab | KeyCode::BackTab => {
+        Command::SwitchPanel => {
             app.toggle_focus();
             None
         }
-
-        // Movement
-        KeyCode::Char('j') | KeyCode::Down => {
+        Command::MoveDown => {
+            if app.search.is_some() && !app.search_origin {
+                let search = app.search.as_mut().unwrap();
+                match app.focus {
+                    FocusPanel::Sidebar => search.sidebar_move_down(),
+                    FocusPanel::Content => search.move_down(),
+                }
+                return None;
+            }
             app.move_cursor_down();
             // Trigger load-more when near bottom
             if near_bottom(app) {
@@ -72,41 +111,58 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
             }
             None
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        Command::MoveUp => {
+            if app.search.is_some() && !app.search_origin {
+                let search = app.search.as_mut().unwrap();
+                match app.focus {
+                    FocusPanel::Sidebar => search.sidebar_move_up(),
+                    FocusPanel::Content => search.move_up(),
+                }
+                return None;
+            }
             app.move_cursor_up();
             None
         }
-
-        // gg (first g)
-        KeyCode::Char('g') => {
-            app.pending_g = true;
+        Command::JumpTop => {
+            app.jump_to_top();
             None
         }
-
-        // G — jump to bottom of loaded tracks (background loading fills the rest)
-        KeyCode::Char('G') => {
+        Command::JumpBottom => {
+            // Background loading fills in the rest of the list behind us.
             if app.content.can_load_more() || app.content.is_loading() {
                 app.pending_jump_to_bottom = true;
             }
             app.jump_to_bottom();
             None
         }
-
-        // Move focus right (no reload)
-        KeyCode::Char('l') | KeyCode::Right => {
+        Command::FocusRight => {
             if app.focus == FocusPanel::Sidebar {
                 app.focus = FocusPanel::Content;
             }
             None
         }
-
-        // Select / expand (loads playlist or plays track)
-        KeyCode::Enter => Some(Action::Select),
-
-        // Back / collapse
-        KeyCode::Char('h') | KeyCode::Left => {
+        Command::FocusLeft => {
+            if app.focus == FocusPanel::Content {
+                app.focus = FocusPanel::Sidebar;
+            }
+            None
+        }
+        Command::Select => {
+            if app.search.is_some() && !app.search_origin {
+                return match app.focus {
+                    FocusPanel::Sidebar => {
+                        app.search.as_mut().unwrap().select_sidebar_item();
+                        app.focus = FocusPanel::Content;
+                        None
+                    }
+                    FocusPanel::Content => Some(Action::SearchSelect),
+                };
+            }
+            Some(Action::Select)
+        }
+        Command::GoBack => {
             if app.search_origin {
-                // Return from search detail view to search results
+                // Return from a search drill-down to the results
                 app.search_origin = false;
                 app.content = ContentView::Empty;
                 app.focus = FocusPanel::Sidebar;
@@ -117,136 +173,64 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<Action> {
                 None
             }
         }
-
-        KeyCode::Esc => {
-            if app.search_origin {
-                app.search_origin = false;
-                app.content = ContentView::Empty;
-                None
-            } else if app.focus == FocusPanel::Content {
-                app.focus = FocusPanel::Sidebar;
-                None
-            } else {
-                None
-            }
-        }
-
-        // Copy link
-        KeyCode::Char('C') => Some(Action::CopyLink),
-
-        // Playback
-        KeyCode::Char(' ') => Some(Action::TogglePlayPause),
-        KeyCode::Char('n') => Some(Action::NextTrack),
-        KeyCode::Char('p') => Some(Action::PreviousTrack),
-        KeyCode::Char('+') | KeyCode::Char('=') => Some(Action::VolumeUp),
-        KeyCode::Char('-') => Some(Action::VolumeDown),
-        KeyCode::Char('>') | KeyCode::Char('.') => Some(Action::SeekForward),
-        KeyCode::Char('<') | KeyCode::Char(',') => Some(Action::SeekBackward),
-        KeyCode::Char('s') => Some(Action::ToggleShuffle),
-        KeyCode::Char('r') => Some(Action::CycleRepeat),
-
-        _ => None,
-    }
-}
-
-fn handle_search_key(app: &mut App, key: KeyEvent) -> Option<Action> {
-    let input_active = app.search.as_ref().unwrap().input_active;
-
-    if input_active {
-        match key.code {
-            KeyCode::Esc => {
-                let has_results = app.search.as_ref().unwrap().has_results();
-                if has_results {
-                    app.search.as_mut().unwrap().input_active = false;
-                } else {
-                    app.search = None;
-                }
-                None
-            }
-            KeyCode::Enter => {
-                let query = app.search.as_ref().unwrap().query.trim().to_string();
-                if query.is_empty() {
-                    return None;
-                }
-                let search = app.search.as_mut().unwrap();
-                search.loading = true;
-                search.clear_results();
-                Some(Action::SubmitSearch { query })
-            }
-            KeyCode::Char(c) => {
-                app.search.as_mut().unwrap().push_char(c);
-                None
-            }
-            KeyCode::Backspace => {
-                app.search.as_mut().unwrap().pop_char();
-                None
-            }
-            _ => None,
-        }
-    } else {
-        // Results browsing mode — sidebar/content focus model
-        match key.code {
-            KeyCode::Char('/') => {
-                app.search.as_mut().unwrap().input_active = true;
-                None
-            }
-            KeyCode::Char('q') => {
-                app.close_search();
-                None
-            }
-            KeyCode::Tab | KeyCode::BackTab => {
-                app.toggle_focus();
-                None
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                if app.focus == FocusPanel::Sidebar {
-                    app.focus = FocusPanel::Content;
-                }
-                None
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                if app.focus == FocusPanel::Content {
-                    app.focus = FocusPanel::Sidebar;
-                }
-                None
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                match app.focus {
-                    FocusPanel::Sidebar => app.search.as_mut().unwrap().sidebar_move_down(),
-                    FocusPanel::Content => app.search.as_mut().unwrap().move_down(),
-                }
-                None
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                match app.focus {
-                    FocusPanel::Sidebar => app.search.as_mut().unwrap().sidebar_move_up(),
-                    FocusPanel::Content => app.search.as_mut().unwrap().move_up(),
-                }
-                None
-            }
-            KeyCode::Enter => match app.focus {
-                FocusPanel::Sidebar => {
-                    app.search.as_mut().unwrap().select_sidebar_item();
-                    app.focus = FocusPanel::Content;
-                    None
-                }
-                FocusPanel::Content => Some(Action::SearchSelect),
-            },
-            KeyCode::Esc => {
+        Command::Unfocus => {
+            if app.search.is_some() && !app.search_origin {
                 if app.focus == FocusPanel::Content {
                     app.focus = FocusPanel::Sidebar;
                 } else {
-                    // Sidebar is the outermost search level — leave search
+                    // The sidebar is the outermost search level — leave search
                     // entirely. Re-enter the query input with '/' instead.
                     app.close_search();
                 }
-                None
+                return None;
             }
-            // Playback controls still work in search results
-            KeyCode::Char(' ') => Some(Action::TogglePlayPause),
-            KeyCode::Char('n') => Some(Action::NextTrack),
-            KeyCode::Char('p') => Some(Action::PreviousTrack),
-            _ => None,
+            if app.search_origin {
+                app.search_origin = false;
+                app.content = ContentView::Empty;
+            } else if app.focus == FocusPanel::Content {
+                app.focus = FocusPanel::Sidebar;
+            }
+            None
+        }
+        Command::CopyLink => Some(Action::CopyLink),
+        Command::TogglePlayPause => Some(Action::TogglePlayPause),
+        Command::NextTrack => Some(Action::NextTrack),
+        Command::PreviousTrack => Some(Action::PreviousTrack),
+        Command::VolumeUp => Some(Action::VolumeUp),
+        Command::VolumeDown => Some(Action::VolumeDown),
+        Command::SeekForward => Some(Action::SeekForward),
+        Command::SeekBackward => Some(Action::SeekBackward),
+        Command::ToggleShuffle => Some(Action::ToggleShuffle),
+        Command::CycleRepeat => Some(Action::CycleRepeat),
+        Command::SearchFocusInput => {
+            app.search.as_mut().unwrap().input_active = true;
+            None
+        }
+        Command::SearchSubmit => {
+            let query = app.search.as_ref().unwrap().query.trim().to_string();
+            if query.is_empty() {
+                return None;
+            }
+            let search = app.search.as_mut().unwrap();
+            search.loading = true;
+            search.clear_results();
+            Some(Action::SubmitSearch { query })
+        }
+        Command::SearchDeleteChar => {
+            app.search.as_mut().unwrap().pop_char();
+            None
+        }
+        Command::SearchExitInput => {
+            if app.search.as_ref().unwrap().has_results() {
+                app.search.as_mut().unwrap().input_active = false;
+            } else {
+                app.search = None;
+            }
+            None
+        }
+        Command::CloseSearch => {
+            app.close_search();
+            None
         }
     }
 }
