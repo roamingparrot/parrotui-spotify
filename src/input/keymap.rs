@@ -144,6 +144,15 @@ pub enum Mode {
 }
 
 impl Mode {
+    pub const ALL: [Mode; 6] = [
+        Self::Normal,
+        Self::Search,
+        Self::SearchInput,
+        Self::Settings,
+        Self::SettingsEditor,
+        Self::Help,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Normal => "normal",
@@ -741,7 +750,7 @@ mod tests {
     fn default_file_round_trips() {
         let parsed = Keymap::from_toml(&default_file()).expect("default file should parse");
         let defaults = Keymap::default();
-        for mode in [Mode::Normal, Mode::Search, Mode::SearchInput, Mode::Help] {
+        for mode in Mode::ALL {
             assert_eq!(
                 parsed.bindings(mode),
                 defaults.bindings(mode),
