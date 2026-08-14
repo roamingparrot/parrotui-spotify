@@ -33,6 +33,7 @@ async fn main() -> color_eyre::Result<()> {
     init_logging();
 
     let config = Config::load(None)?;
+    let keymap = input::Keymap::load(&config::keybindings_path())?;
 
     // Web API token — obtained via PKCE OAuth with ncspot's client_id.
     let mut token_data = get_or_refresh_token().await?;
@@ -57,7 +58,7 @@ async fn main() -> color_eyre::Result<()> {
     let mut player_events = engine.as_ref().unwrap().get_event_channel();
     eprintln!("Device '{}' ready (id: {})", config.device_name, device_id);
 
-    let mut app = App::new(config, device_id.clone());
+    let mut app = App::new(config, keymap, device_id.clone());
 
     // Channel for async action results.
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();

@@ -123,6 +123,10 @@ pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
+pub fn keybindings_path() -> PathBuf {
+    config_dir().join("keybindings.toml")
+}
+
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
         .expect("could not determine cache directory")
