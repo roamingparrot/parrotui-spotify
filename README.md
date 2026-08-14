@@ -14,6 +14,7 @@ Part of the **parrotui** family of TUI apps. More TUI clients are on the way —
 - Browse and play playlists
 - Liked songs library
 - Theme system with multiple presets (cyan, spotify, dracula)
+- In-app settings view with fully remappable keybindings
 - Vim-style and arrow key navigation
 - Now-playing bar with smooth local progress tracking
 - Appears in Spotify's device list (can be controlled from phone/desktop too)
@@ -97,15 +98,30 @@ See [KEYBINDINGS.md](KEYBINDINGS.md) for the full list.
 
 ## Configuration
 
-Config lives at `~/.config/parrotui-spotify/config.toml`:
+Press `,` for the settings view. Changes are written straight to
+`~/.config/parrotui-spotify/config.toml`, which you can also edit by hand:
 
 ```toml
 device_name = "parrotui-spotify"     # how it shows in Spotify Connect
 initial_volume = 100                 # 0-100
 theme = "default"                    # default, spotify, or dracula
-# tick_rate_ms = 50
-# refresh_interval_secs = 5
+volume_step = 5                      # how far + and - move the volume
+seek_step_secs = 5                   # how far > and < seek
+bitrate = 160                        # 96, 160 or 320 kbps
+normalisation = false                # even out volume between tracks
+audio_cache_mb = 50                  # on-disk audio cache limit
+tick_rate_ms = 50
+refresh_interval_secs = 5
 ```
+
+Note that the settings view rewrites this file when you change something, so
+comments you add won't survive.
+
+Device name, bitrate, normalisation and the cache size are read when the
+playback engine starts, so they apply on the next launch.
+
+Keys are configured separately in `keybindings.toml` — see
+[KEYBINDINGS.md](KEYBINDINGS.md).
 
 ## How it works
 

@@ -210,11 +210,13 @@ for UI changes. Mention edge cases you checked.
 
 ## Testing
 
-We don't have a test suite yet. When we add one:
+`cargo test` covers the keymap, the settings values and the settings rendering.
 
 - Unit tests go in the same file (`#[cfg(test)] mod tests { ... }`).
 - Integration tests go in `tests/`.
 - Mock the Spotify API for tests, not librespot internals.
+- Widgets can be rendered against `ratatui::backend::TestBackend` — see
+  `ui/widgets/settings.rs`. `App::new` needs no network, so this is cheap.
 
 ## Releases
 
