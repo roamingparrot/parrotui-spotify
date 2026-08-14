@@ -331,7 +331,7 @@ fn process_player_events(
             PlayerEvent::Loading { .. } => {}
             PlayerEvent::VolumeChanged { volume } => {
                 let pct = ((volume as u32 * 100 + 32767) / 65535) as u8;
-                app.volume = ((pct + 2) / 5 * 5).min(100);
+                app.volume = player::snap_volume(pct, app.config.volume_step);
             }
             PlayerEvent::ShuffleChanged { shuffle } => {
                 app.shuffle = shuffle;
