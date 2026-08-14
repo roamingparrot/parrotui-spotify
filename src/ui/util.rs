@@ -34,3 +34,16 @@ pub fn centered_rect(pct_w: u16, pct_h: u16, area: Rect) -> Rect {
     ])
     .split(v[1])[1]
 }
+
+/// Center a box of an exact size, shrinking it to fit `area` if needed.
+/// For popups sized to their own content rather than a fraction of the frame.
+pub fn centered_fixed_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    }
+}

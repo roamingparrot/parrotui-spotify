@@ -10,7 +10,7 @@ use crate::input::{Keymap, Mode};
 use crate::state::App;
 use crate::state::settings::{SettingsState, SettingsTab, ValueEditor};
 use crate::ui::theme::Theme;
-use crate::ui::util::centered_rect;
+use crate::ui::util::centered_fixed_rect;
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let settings = app.settings.as_ref().unwrap();
@@ -157,14 +157,15 @@ fn draw_keybindings(frame: &mut Frame, keymap: &Keymap, area: Rect, theme: &Them
 fn draw_editor(frame: &mut Frame, editor: &ValueEditor, area: Rect, theme: &Theme) {
     let key = editor.key();
 
-    let (height_pct, body) = match editor {
+    let body = match editor {
         ValueEditor::Choice {
             options, cursor, ..
-        } => (40, Some((*options, *cursor))),
-        ValueEditor::Entry { .. } => (20, None),
+        } => Some((*options, *cursor)),
+        ValueEditor::Entry { .. } => None,
     };
 
-    let popup = centered_rect(50, height_pct, area);
+    let (width, height) = editor.popup_size();
+    let popup = centered_fixed_rect(width, height, area);
     frame.render_widget(Clear, popup);
 
     let block = Block::default()
@@ -251,8 +252,8 @@ mod tests {
 
     #[test]
     fn renders_in_a_cramped_terminal() {
-        // The playback tab has the most rows, and the editor popup is sized as
-        // a percentage of the frame.
+        // The playback tab has the most rows, and the editor popup has to
+        // shrink to fit rather than overflow a tiny frame.
         let mut app = app_with_settings();
         app.settings
             .as_mut()

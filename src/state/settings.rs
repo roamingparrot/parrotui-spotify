@@ -237,6 +237,25 @@ impl ValueEditor {
         }
     }
 
+    /// The popup's natural size: tall enough for its rows and no taller, wide
+    /// enough for its title and content and no wider. Keeps a one-line text
+    /// field from getting a multi-row list's worth of empty space.
+    pub fn popup_size(&self) -> (u16, u16) {
+        let title_width = self.key().label().chars().count();
+
+        let (content_width, body_rows) = match self {
+            Self::Choice { options, .. } => (
+                options.iter().map(|o| o.chars().count()).max().unwrap_or(0),
+                options.len(),
+            ),
+            Self::Entry { buffer, .. } => (buffer.chars().count(), 1),
+        };
+
+        let width = (title_width.max(content_width) + 6).clamp(24, 60) as u16;
+        let height = (body_rows + 2) as u16;
+        (width, height)
+    }
+
     /// The value to commit.
     pub fn selection(&self) -> String {
         match self {
@@ -417,5 +436,27 @@ mod tests {
             editor.move_down();
         }
         assert_eq!(editor.selection(), "320");
+    }
+
+    #[test]
+    fn popup_height_matches_row_count_not_a_fixed_fraction() {
+        let config = Config::default();
+
+        // A one-line text field needs one row, regardless of terminal size.
+        let editor = ValueEditor::open(SettingKey::TickRate, &config);
+        assert_eq!(editor.popup_size().1, 3, "1 line + top/bottom border");
+
+        // A choice list needs exactly its option count.
+        let editor = ValueEditor::open(SettingKey::Theme, &config);
+        let SettingKind::Choice(options) = SettingKey::Theme.kind() else {
+            panic!("theme should be a choice");
+        };
+        assert_eq!(editor.popup_size().1, options.len() as u16 + 2);
+
+        let editor = ValueEditor::open(SettingKey::Bitrate, &config);
+        let SettingKind::Choice(options) = SettingKey::Bitrate.kind() else {
+            panic!("bitrate should be a choice");
+        };
+        assert_eq!(editor.popup_size().1, options.len() as u16 + 2);
     }
 }
