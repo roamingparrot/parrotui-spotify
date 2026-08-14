@@ -10,7 +10,7 @@ use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
 use librespot_playback::audio_backend;
-use librespot_playback::config::{AudioFormat, PlayerConfig};
+use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig};
 use librespot_playback::mixer::{self, MixerConfig};
 use librespot_playback::player::{Player, PlayerEventChannel};
 
@@ -55,7 +55,7 @@ impl PlaybackEngine {
             Some(&cred_cache_dir),
             Some(&volume_dir),
             Some(&audio_dir),
-            Some(1024 * 1024 * 50),
+            Some(config.audio_cache_mb * 1024 * 1024),
         )
         .map_err(|e| SpotError::Session(format!("cache init: {e}")))?;
 
@@ -64,7 +64,11 @@ impl PlaybackEngine {
 
         let session = Session::new(session_config, Some(cache));
 
-        let player_config = PlayerConfig::default();
+        let player_config = PlayerConfig {
+            bitrate: bitrate_from_kbps(config.bitrate),
+            normalisation: config.normalisation,
+            ..Default::default()
+        };
         let audio_format = AudioFormat::default();
 
         let backend_fn = audio_backend::find(Some("rodio".to_string()))
@@ -201,6 +205,14 @@ fn request_streaming_oauth(cred_cache_dir: &std::path::Path) -> Result<Credentia
 
 fn spirc_err(e: librespot_core::Error) -> SpotError {
     SpotError::Playback(format!("spirc: {e}"))
+}
+
+fn bitrate_from_kbps(kbps: u16) -> Bitrate {
+    match kbps {
+        96 => Bitrate::Bitrate96,
+        320 => Bitrate::Bitrate320,
+        _ => Bitrate::Bitrate160,
+    }
 }
 
 pub fn device_id_from_name(name: &str) -> String {
