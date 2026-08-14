@@ -396,7 +396,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config, device_id: String) -> Self {
+    pub fn new(config: Config, keymap: Keymap, device_id: String) -> Self {
         let theme = Theme::from_name(&config.theme);
         let device_name = config.device_name.clone();
         let volume = config.initial_volume;
@@ -420,7 +420,7 @@ impl App {
             device_id,
             is_active_device: false,
             pending_replay_action: None,
-            keymap: Keymap::default(),
+            keymap,
             pending_keys: Vec::new(),
             sidebar_marquee: MarqueeState::new(),
             track_marquee: MarqueeState::new(),

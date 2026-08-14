@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::error::{Result, SpotError};
+
 /// Everything a key can be bound to. Commands that need an API call return an
 /// `Action` from the handler; the rest only touch `App`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {
     Quit,
     ToggleHelp,
@@ -38,6 +41,49 @@ pub enum Command {
 }
 
 impl Command {
+    /// Name used in keybindings.toml.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Quit => "quit",
+            Self::ToggleHelp => "toggle_help",
+            Self::CloseHelp => "close_help",
+            Self::OpenSearch => "open_search",
+            Self::SwitchPanel => "switch_panel",
+            Self::MoveDown => "move_down",
+            Self::MoveUp => "move_up",
+            Self::JumpTop => "jump_top",
+            Self::JumpBottom => "jump_bottom",
+            Self::FocusRight => "focus_right",
+            Self::FocusLeft => "focus_left",
+            Self::Select => "select",
+            Self::GoBack => "go_back",
+            Self::Unfocus => "unfocus",
+            Self::CopyLink => "copy_link",
+            Self::TogglePlayPause => "toggle_play_pause",
+            Self::NextTrack => "next_track",
+            Self::PreviousTrack => "previous_track",
+            Self::VolumeUp => "volume_up",
+            Self::VolumeDown => "volume_down",
+            Self::SeekForward => "seek_forward",
+            Self::SeekBackward => "seek_backward",
+            Self::ToggleShuffle => "toggle_shuffle",
+            Self::CycleRepeat => "cycle_repeat",
+            Self::SearchFocusInput => "search_focus_input",
+            Self::SearchSubmit => "search_submit",
+            Self::SearchDeleteChar => "search_delete_char",
+            Self::SearchExitInput => "search_exit_input",
+            Self::CloseSearch => "close_search",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Self> {
+        DEFAULT_BINDINGS
+            .iter()
+            .flat_map(|(_, specs)| specs.iter())
+            .map(|(cmd, _)| *cmd)
+            .find(|cmd| cmd.name() == name)
+    }
+
     /// Human-readable label for the help popup.
     pub fn label(self) -> &'static str {
         match self {
@@ -81,6 +127,24 @@ pub enum Mode {
     Search,
     SearchInput,
     Help,
+}
+
+impl Mode {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Search => "search",
+            Self::SearchInput => "search_input",
+            Self::Help => "help",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Self> {
+        DEFAULT_BINDINGS
+            .iter()
+            .map(|(mode, _)| *mode)
+            .find(|mode| mode.name() == name)
+    }
 }
 
 /// A single key press: a code plus the modifiers that matter.
@@ -267,18 +331,140 @@ impl Keymap {
     }
 }
 
-impl Default for Keymap {
-    fn default() -> Self {
-        let mut modes = HashMap::new();
-        for (mode, specs) in DEFAULT_BINDINGS {
-            let bindings = specs
-                .iter()
-                .filter_map(|(cmd, spec)| Binding::parse(spec).map(|b| (b, *cmd)))
-                .collect();
-            modes.insert(*mode, bindings);
+impl Keymap {
+    /// Read the keymap from disk, writing the defaults out first if the file
+    /// isn't there yet. Individual entries that don't make sense are logged and
+    /// skipped rather than failing startup.
+    pub fn load(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(path, default_file())?;
+            return Ok(Self::default());
         }
+
+        Self::from_toml(&std::fs::read_to_string(path)?)
+    }
+
+    fn from_toml(raw: &str) -> Result<Self> {
+        let sections: HashMap<String, HashMap<String, Vec<String>>> = toml::from_str(raw)
+            .map_err(|e| SpotError::Config(format!("bad keybindings toml: {e}")))?;
+
+        let mut overrides: HashMap<(Mode, Command), Vec<Binding>> = HashMap::new();
+        for (mode_name, commands) in sections {
+            let Some(mode) = Mode::from_name(&mode_name) else {
+                tracing::warn!(section = %mode_name, "unknown keybinding section, ignoring");
+                continue;
+            };
+            for (cmd_name, specs) in commands {
+                let Some(cmd) = Command::from_name(&cmd_name) else {
+                    tracing::warn!(command = %cmd_name, "unknown command, ignoring");
+                    continue;
+                };
+                let bindings = overrides.entry((mode, cmd)).or_default();
+                for spec in specs {
+                    match Binding::parse(&spec) {
+                        Some(b) => bindings.push(b),
+                        None => {
+                            tracing::warn!(key = %spec, command = %cmd_name, "unparseable key, ignoring")
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Self::build(&overrides))
+    }
+
+    /// Merge overrides onto the defaults. Display order follows
+    /// `DEFAULT_BINDINGS` so the help popup stays readable no matter how the
+    /// user's file is arranged.
+    fn build(overrides: &HashMap<(Mode, Command), Vec<Binding>>) -> Self {
+        let mut modes: HashMap<Mode, Vec<(Binding, Command)>> = HashMap::new();
+        let mut overridden: Vec<(Mode, Command)> = Vec::new();
+
+        for (mode, specs) in DEFAULT_BINDINGS {
+            let list = modes.entry(*mode).or_default();
+            for (cmd, spec) in *specs {
+                match overrides.get(&(*mode, *cmd)) {
+                    Some(bindings) => {
+                        // A command with several default aliases appears more
+                        // than once — only expand its override the first time.
+                        if !overridden.contains(&(*mode, *cmd)) {
+                            overridden.push((*mode, *cmd));
+                            list.extend(bindings.iter().cloned().map(|b| (b, *cmd)));
+                        }
+                    }
+                    None => {
+                        if let Some(b) = Binding::parse(spec) {
+                            list.push((b, *cmd));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Commands bound in a mode that has no default for them.
+        let mut extra: Vec<_> = overrides
+            .iter()
+            .filter(|((mode, cmd), _)| !overridden.contains(&(*mode, *cmd)))
+            .collect();
+        extra.sort_by_key(|((mode, cmd), _)| (mode.name(), cmd.name()));
+        for ((mode, cmd), bindings) in extra {
+            modes
+                .entry(*mode)
+                .or_default()
+                .extend(bindings.iter().cloned().map(|b| (b, *cmd)));
+        }
+
         Self { modes }
     }
+}
+
+impl Default for Keymap {
+    fn default() -> Self {
+        Self::build(&HashMap::new())
+    }
+}
+
+/// The commented default keybindings.toml. Written verbatim on first run so the
+/// explanation survives — we never rewrite this file.
+fn default_file() -> String {
+    let mut out = String::from(
+        "# Keybindings for parrotui-spotify.\n\
+         #\n\
+         # Keys are named (\"space\", \"esc\", \"down\", \"f5\"), single characters\n\
+         # (\"j\", \"G\"), modifier combinations (\"ctrl+x\"), or space-separated\n\
+         # sequences (\"g g\"). Uppercase and lowercase are different keys.\n\
+         #\n\
+         # Sections are the context the key applies in. Commands you leave out keep\n\
+         # their defaults; give one an empty list to unbind it.\n\
+         #\n\
+         # Ctrl+C always quits and can't be rebound, and in [search_input] every\n\
+         # printable character is typed into the query rather than run as a\n\
+         # command.\n",
+    );
+
+    for (mode, specs) in DEFAULT_BINDINGS {
+        out.push_str(&format!("\n[{}]\n", mode.name()));
+
+        // Group a command's aliases onto one line, in declaration order.
+        let mut grouped: Vec<(Command, Vec<&str>)> = Vec::new();
+        for (cmd, spec) in *specs {
+            match grouped.iter_mut().find(|(c, _)| c == cmd) {
+                Some((_, keys)) => keys.push(spec),
+                None => grouped.push((*cmd, vec![spec])),
+            }
+        }
+
+        for (cmd, keys) in grouped {
+            let list: Vec<String> = keys.iter().map(|k| format!("\"{k}\"")).collect();
+            out.push_str(&format!("{} = [{}]\n", cmd.name(), list.join(", ")));
+        }
+    }
+
+    out
 }
 
 /// The default bindings, in the order they appear in the help popup.
@@ -499,5 +685,80 @@ mod tests {
         // Printable characters are text, so they must not resolve to commands.
         assert_eq!(command(&keymap, Mode::SearchInput, &[], key("q")), None);
         assert_eq!(command(&keymap, Mode::SearchInput, &[], key("j")), None);
+    }
+
+    #[test]
+    fn default_file_round_trips() {
+        let parsed = Keymap::from_toml(&default_file()).expect("default file should parse");
+        let defaults = Keymap::default();
+        for mode in [Mode::Normal, Mode::Search, Mode::SearchInput, Mode::Help] {
+            assert_eq!(
+                parsed.bindings(mode),
+                defaults.bindings(mode),
+                "{} bindings should survive a round trip",
+                mode.name()
+            );
+        }
+    }
+
+    #[test]
+    fn override_replaces_the_default_keys() {
+        let keymap = Keymap::from_toml("[normal]\nmove_down = [\"x\"]\n").unwrap();
+        assert_eq!(
+            command(&keymap, Mode::Normal, &[], key("x")),
+            Some(Command::MoveDown)
+        );
+        // The defaults it replaced are gone...
+        assert_eq!(command(&keymap, Mode::Normal, &[], key("j")), None);
+        assert_eq!(command(&keymap, Mode::Normal, &[], key("down")), None);
+        // ...but untouched commands keep theirs.
+        assert_eq!(
+            command(&keymap, Mode::Normal, &[], key("k")),
+            Some(Command::MoveUp)
+        );
+    }
+
+    #[test]
+    fn empty_list_unbinds() {
+        let keymap = Keymap::from_toml("[normal]\nquit = []\n").unwrap();
+        assert_eq!(command(&keymap, Mode::Normal, &[], key("q")), None);
+    }
+
+    #[test]
+    fn unknown_names_are_skipped_not_fatal() {
+        let keymap = Keymap::from_toml(
+            "[nonsense]\nmove_down = [\"x\"]\n\n[normal]\nfly_away = [\"y\"]\nnot_a_key = [\"nope\"]\n",
+        )
+        .expect("unknown entries should not fail the load");
+        // Defaults survive intact.
+        assert_eq!(
+            command(&keymap, Mode::Normal, &[], key("j")),
+            Some(Command::MoveDown)
+        );
+        assert_eq!(command(&keymap, Mode::Normal, &[], key("x")), None);
+        assert_eq!(command(&keymap, Mode::Normal, &[], key("y")), None);
+    }
+
+    #[test]
+    fn malformed_toml_is_an_error() {
+        assert!(Keymap::from_toml("[normal\nbroken").is_err());
+    }
+
+    #[test]
+    fn chord_can_be_rebound() {
+        let keymap = Keymap::from_toml("[normal]\njump_top = [\"z z\"]\n").unwrap();
+        let z = key("z");
+        assert!(matches!(
+            keymap.lookup(Mode::Normal, &[], z),
+            Lookup::Pending
+        ));
+        assert_eq!(
+            command(&keymap, Mode::Normal, &[z], z),
+            Some(Command::JumpTop)
+        );
+        assert!(matches!(
+            keymap.lookup(Mode::Normal, &[], key("g")),
+            Lookup::None
+        ));
     }
 }
