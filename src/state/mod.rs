@@ -3,6 +3,7 @@ pub mod marquee;
 pub use marquee::MarqueeState;
 
 use crate::api::{Album, FullArtist, Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
+use crate::config::Config;
 use crate::playback::ProgressTracker;
 use crate::player::Action;
 use crate::ui::theme::Theme;
@@ -337,6 +338,7 @@ impl ContentView {
 
 pub struct App {
     pub running: bool,
+    pub config: Config,
 
     pub focus: FocusPanel,
     pub sidebar_cursor: usize,
@@ -392,9 +394,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(device_name: String, device_id: String, initial_volume: u8, theme: Theme) -> Self {
+    pub fn new(config: Config, device_id: String) -> Self {
+        let theme = Theme::from_name(&config.theme);
+        let device_name = config.device_name.clone();
+        let volume = config.initial_volume;
         Self {
             running: true,
+            config,
             focus: FocusPanel::Sidebar,
             sidebar_cursor: 0,
             sidebar_items: vec![SidebarItem::LikedSongs],
@@ -405,7 +411,7 @@ impl App {
             notification: None,
             progress: ProgressTracker::new(),
             now_playing_track: None,
-            volume: initial_volume,
+            volume,
             shuffle: false,
             repeat: RepeatMode::Off,
             device_name,
