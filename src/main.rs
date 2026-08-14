@@ -85,8 +85,6 @@ async fn main() -> color_eyre::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let tick_rate = app.config.tick_rate();
-    let refresh_interval = Duration::from_secs(app.config.refresh_interval_secs);
     let mut last_refresh = Instant::now();
     let health_check_interval = Duration::from_secs(60);
     let mut last_health_check = Instant::now();
@@ -196,6 +194,11 @@ async fn main() -> color_eyre::Result<()> {
         if !app.running {
             break;
         }
+
+        // Read the timings each pass so edits in the settings view take effect
+        // without a restart.
+        let tick_rate = app.config.tick_rate();
+        let refresh_interval = Duration::from_secs(app.config.refresh_interval_secs);
 
         // Only sleep when idle — redraw immediately after input for snappy navigation.
         if !had_input {

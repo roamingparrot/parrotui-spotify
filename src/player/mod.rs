@@ -27,6 +27,9 @@ pub enum Action {
     Select,
     GoBack,
 
+    // Persist the config after a settings edit (sync)
+    SaveConfig,
+
     // Data — fetched from Web API (async, spawned)
     RefreshPlayback,
     LoadPlaylists,
@@ -202,6 +205,11 @@ pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Op
         Action::GoBack => {
             handle_go_back(app);
             return None;
+        }
+
+        Action::SaveConfig => {
+            let path = crate::config::config_path();
+            return sync_result(app.config.save(&path), app);
         }
 
         // Select has a sync part (state change) + optional async part
