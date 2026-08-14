@@ -10,11 +10,19 @@ use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Pa
 
 use crate::state::{App, ContentView, FocusPanel, SearchTab};
 use theme::panel_style;
-use widgets::{help_popup, playbar, search_bar, search_results, sidebar, status_line, track_table};
+use widgets::{
+    help_popup, playbar, search_bar, search_results, settings, sidebar, status_line, track_table,
+};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     let theme = app.theme;
+
+    // Settings takes over the whole frame.
+    if app.settings.is_some() {
+        settings::draw(frame, app, area, &theme);
+        return;
+    }
 
     // Adaptive margin: tighter on small terminals.
     let margin = if area.height > 45 { 1 } else { 0 };

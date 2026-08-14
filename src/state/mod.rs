@@ -1,6 +1,8 @@
 pub mod marquee;
+pub mod settings;
 
 pub use marquee::MarqueeState;
+pub use settings::SettingsState;
 
 use crate::api::{Album, FullArtist, Page, Playlist, PlaylistItem, RepeatMode, SavedTrack, Track};
 use crate::config::Config;
@@ -393,6 +395,9 @@ pub struct App {
     // Search
     pub search: Option<SearchState>,
     pub search_origin: bool,
+
+    // Settings — takes over the whole frame while open
+    pub settings: Option<SettingsState>,
 }
 
 impl App {
@@ -435,7 +440,13 @@ impl App {
             theme,
             search: None,
             search_origin: false,
+            settings: None,
         }
+    }
+
+    /// Re-derive whatever is cached out of the config after a settings edit.
+    pub fn apply_config(&mut self) {
+        self.theme = Theme::from_name(&self.config.theme);
     }
 
     pub fn current_sidebar_item(&self) -> &SidebarItem {
