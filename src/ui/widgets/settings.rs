@@ -119,7 +119,7 @@ fn draw_keybindings(frame: &mut Frame, keymap: &Keymap, area: Rect, theme: &Them
         .border_style(Style::default().fg(theme.inactive));
 
     let mut rows: Vec<Row> = Vec::new();
-    for mode in [Mode::Normal, Mode::Search, Mode::SearchInput, Mode::Help] {
+    for mode in Mode::ALL {
         rows.push(Row::new(vec![
             Cell::from(format!("  [{}]", mode.name())).style(
                 Style::default()

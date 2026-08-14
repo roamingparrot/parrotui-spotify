@@ -136,3 +136,50 @@ pub fn cache_dir() -> PathBuf {
 pub fn token_cache_path() -> PathBuf {
     cache_dir().join("token.json")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialized_config_reads_back_identically() {
+        let config = Config {
+            device_name: "somewhere else".to_string(),
+            initial_volume: 40,
+            theme: "dracula".to_string(),
+            volume_step: 2,
+            seek_step_secs: 15,
+            bitrate: 320,
+            normalisation: true,
+            audio_cache_mb: 0,
+            tick_rate_ms: 100,
+            refresh_interval_secs: 30,
+        };
+
+        let toml_str = toml::to_string_pretty(&config).expect("should serialize");
+        let parsed: Config = toml::from_str(&toml_str).expect("should parse back");
+
+        assert_eq!(parsed.device_name, config.device_name);
+        assert_eq!(parsed.initial_volume, config.initial_volume);
+        assert_eq!(parsed.theme, config.theme);
+        assert_eq!(parsed.volume_step, config.volume_step);
+        assert_eq!(parsed.seek_step_secs, config.seek_step_secs);
+        assert_eq!(parsed.bitrate, config.bitrate);
+        assert_eq!(parsed.normalisation, config.normalisation);
+        assert_eq!(parsed.audio_cache_mb, config.audio_cache_mb);
+        assert_eq!(parsed.tick_rate_ms, config.tick_rate_ms);
+        assert_eq!(parsed.refresh_interval_secs, config.refresh_interval_secs);
+    }
+
+    #[test]
+    fn missing_keys_fall_back_to_defaults() {
+        // Configs written by older versions won't have the newer keys.
+        let parsed: Config =
+            toml::from_str("device_name = \"only this\"\n").expect("should parse a sparse config");
+
+        assert_eq!(parsed.device_name, "only this");
+        assert_eq!(parsed.volume_step, default_volume_step());
+        assert_eq!(parsed.bitrate, default_bitrate());
+        assert_eq!(parsed.tick_rate_ms, DEFAULT_TICK_RATE_MS);
+    }
+}
