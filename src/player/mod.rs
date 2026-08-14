@@ -178,16 +178,20 @@ pub fn handle_sync(action: Action, app: &mut App, engine: &PlaybackEngine) -> Op
             return Some(Action::RefreshPlayback);
         }
         Action::VolumeUp => {
-            return sync_result(adjust_volume(app, engine, 5), app);
+            let step = app.config.volume_step as i16;
+            return sync_result(adjust_volume(app, engine, step), app);
         }
         Action::VolumeDown => {
-            return sync_result(adjust_volume(app, engine, -5), app);
+            let step = app.config.volume_step as i16;
+            return sync_result(adjust_volume(app, engine, -step), app);
         }
         Action::SeekForward => {
-            return sync_result(seek_relative(app, engine, 5000), app);
+            let step = app.config.seek_step_ms();
+            return sync_result(seek_relative(app, engine, step), app);
         }
         Action::SeekBackward => {
-            return sync_result(seek_relative(app, engine, -5000), app);
+            let step = app.config.seek_step_ms();
+            return sync_result(seek_relative(app, engine, -step), app);
         }
         Action::ToggleShuffle => {
             return sync_result(toggle_shuffle(app, engine), app);
@@ -634,7 +638,7 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
 
                 if let Some(dev) = &pb.device {
                     let v = dev.volume_percent.unwrap_or(app.volume);
-                    app.volume = ((v + 2) / 5 * 5).min(100);
+                    app.volume = snap_volume(v, app.config.volume_step);
                     app.is_active_device = dev.id.as_deref() == Some(&app.device_id);
                 }
 
@@ -775,6 +779,15 @@ fn toggle_play_pause(app: &mut App, engine: &PlaybackEngine) -> Result<()> {
         app.progress.resume();
     }
     Ok(())
+}
+
+/// Round a volume reported by librespot or the Web API onto the configured
+/// step grid. Volume round-trips through a u16 scale, so what comes back is
+/// rarely the exact percentage we sent.
+pub fn snap_volume(pct: u8, step: u8) -> u8 {
+    let step = step.max(1) as u16;
+    let snapped = (pct as u16 + step / 2) / step * step;
+    snapped.min(100) as u8
 }
 
 fn adjust_volume(app: &mut App, engine: &PlaybackEngine, delta: i16) -> Result<()> {

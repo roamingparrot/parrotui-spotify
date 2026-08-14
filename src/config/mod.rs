@@ -107,6 +107,10 @@ impl Config {
     pub fn tick_rate(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.tick_rate_ms)
     }
+
+    pub fn seek_step_ms(&self) -> i64 {
+        (self.seek_step_secs * 1000) as i64
+    }
 }
 
 pub fn config_dir() -> PathBuf {
