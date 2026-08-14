@@ -94,9 +94,10 @@ fn draw_rows(frame: &mut Frame, app: &App, settings: &SettingsState, area: Rect,
         })
         .collect();
 
+    // Leaves the note column enough room to survive an 80-column terminal.
     let widths = [
         Constraint::Length(28),
-        Constraint::Length(24),
+        Constraint::Length(18),
         Constraint::Min(0),
     ];
     let table = Table::new(rows, widths)
