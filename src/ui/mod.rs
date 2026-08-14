@@ -76,7 +76,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 
     if app.show_help {
-        help_popup::draw(frame, area, &theme);
+        help_popup::draw(frame, &app.keymap, area, &theme);
     }
 }
 
