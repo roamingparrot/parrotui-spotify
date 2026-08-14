@@ -57,13 +57,7 @@ async fn main() -> color_eyre::Result<()> {
     let mut player_events = engine.as_ref().unwrap().get_event_channel();
     eprintln!("Device '{}' ready (id: {})", config.device_name, device_id);
 
-    let theme = ui::theme::Theme::from_name(&config.theme);
-    let mut app = App::new(
-        config.device_name.clone(),
-        device_id.clone(),
-        config.initial_volume,
-        theme,
-    );
+    let mut app = App::new(config, device_id.clone());
 
     // Channel for async action results.
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel::<player::ActionResult>();
@@ -90,8 +84,8 @@ async fn main() -> color_eyre::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let tick_rate = config.tick_rate();
-    let refresh_interval = Duration::from_secs(config.refresh_interval_secs);
+    let tick_rate = app.config.tick_rate();
+    let refresh_interval = Duration::from_secs(app.config.refresh_interval_secs);
     let mut last_refresh = Instant::now();
     let health_check_interval = Duration::from_secs(60);
     let mut last_health_check = Instant::now();
@@ -132,7 +126,7 @@ async fn main() -> color_eyre::Result<()> {
                 if let Some(old) = engine.take() {
                     old.shutdown();
                 }
-                match playback::PlaybackEngine::start(&config).await {
+                match playback::PlaybackEngine::start(&app.config).await {
                     Ok(new_engine) => {
                         player_events = new_engine.get_event_channel();
                         engine = Some(new_engine);
