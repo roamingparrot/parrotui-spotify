@@ -139,8 +139,9 @@ fn run_command(app: &mut App, cmd: Command) -> Option<Action> {
             None
         }
         Command::MoveDown => {
-            if app.search.is_some() && !app.search_origin {
-                let search = app.search.as_mut().unwrap();
+            if !app.search_origin
+                && let Some(search) = app.search.as_mut()
+            {
                 match app.focus {
                     FocusPanel::Sidebar => search.sidebar_move_down(),
                     FocusPanel::Content => search.move_down(),
@@ -155,8 +156,9 @@ fn run_command(app: &mut App, cmd: Command) -> Option<Action> {
             None
         }
         Command::MoveUp => {
-            if app.search.is_some() && !app.search_origin {
-                let search = app.search.as_mut().unwrap();
+            if !app.search_origin
+                && let Some(search) = app.search.as_mut()
+            {
                 match app.focus {
                     FocusPanel::Sidebar => search.sidebar_move_up(),
                     FocusPanel::Content => search.move_up(),
@@ -191,10 +193,12 @@ fn run_command(app: &mut App, cmd: Command) -> Option<Action> {
             None
         }
         Command::Select => {
-            if app.search.is_some() && !app.search_origin {
+            if !app.search_origin
+                && let Some(search) = app.search.as_mut()
+            {
                 return match app.focus {
                     FocusPanel::Sidebar => {
-                        app.search.as_mut().unwrap().select_sidebar_item();
+                        search.select_sidebar_item();
                         app.focus = FocusPanel::Content;
                         None
                     }
