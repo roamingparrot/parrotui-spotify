@@ -119,6 +119,13 @@ pub struct SavedTrack {
     pub track: Track,
 }
 
+// -- Saved albums --
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SavedAlbum {
+    pub album: Album,
+}
+
 // -- Recently played --
 
 #[derive(Debug, Clone, Deserialize)]
