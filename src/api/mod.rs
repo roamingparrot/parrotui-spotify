@@ -359,6 +359,12 @@ impl SpotifyClient {
         tracing::debug!(%url, "GET liked tracks");
         self.get_json(&url).await
     }
+
+    pub async fn my_albums(&self, limit: u32, offset: u32) -> Result<Page<SavedAlbum>> {
+        let url = format!("{BASE}/me/albums?limit={limit}&offset={offset}");
+        tracing::debug!(%url, "GET my albums");
+        self.get_json(&url).await
+    }
 }
 
 fn retry_after(resp: &reqwest::Response) -> u64 {
