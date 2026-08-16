@@ -29,6 +29,12 @@ pub struct Config {
     pub normalisation: bool,
     #[serde(default = "default_audio_cache_mb")]
     pub audio_cache_mb: u64,
+    #[serde(default = "default_true")]
+    pub sidebar_show_playlists: bool,
+    #[serde(default = "default_true")]
+    pub sidebar_show_albums: bool,
+    #[serde(default = "default_true")]
+    pub sidebar_show_liked_songs: bool,
 }
 
 fn default_tick_rate() -> u64 {
@@ -55,6 +61,9 @@ fn default_bitrate() -> u16 {
 fn default_audio_cache_mb() -> u64 {
     50
 }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -69,6 +78,9 @@ impl Default for Config {
             bitrate: default_bitrate(),
             normalisation: false,
             audio_cache_mb: default_audio_cache_mb(),
+            sidebar_show_playlists: default_true(),
+            sidebar_show_albums: default_true(),
+            sidebar_show_liked_songs: default_true(),
         }
     }
 }
@@ -154,6 +166,9 @@ mod tests {
             audio_cache_mb: 0,
             tick_rate_ms: 100,
             refresh_interval_secs: 30,
+            sidebar_show_playlists: true,
+            sidebar_show_albums: false,
+            sidebar_show_liked_songs: true,
         };
 
         let toml_str = toml::to_string_pretty(&config).expect("should serialize");
@@ -169,6 +184,12 @@ mod tests {
         assert_eq!(parsed.audio_cache_mb, config.audio_cache_mb);
         assert_eq!(parsed.tick_rate_ms, config.tick_rate_ms);
         assert_eq!(parsed.refresh_interval_secs, config.refresh_interval_secs);
+        assert_eq!(parsed.sidebar_show_playlists, config.sidebar_show_playlists);
+        assert_eq!(parsed.sidebar_show_albums, config.sidebar_show_albums);
+        assert_eq!(
+            parsed.sidebar_show_liked_songs,
+            config.sidebar_show_liked_songs
+        );
     }
 
     #[test]
@@ -181,5 +202,8 @@ mod tests {
         assert_eq!(parsed.volume_step, default_volume_step());
         assert_eq!(parsed.bitrate, default_bitrate());
         assert_eq!(parsed.tick_rate_ms, DEFAULT_TICK_RATE_MS);
+        assert!(parsed.sidebar_show_playlists);
+        assert!(parsed.sidebar_show_albums);
+        assert!(parsed.sidebar_show_liked_songs);
     }
 }
