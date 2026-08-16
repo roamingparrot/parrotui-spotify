@@ -11,8 +11,9 @@ Part of the **parrotui** family of TUI apps. More TUI clients are on the way —
 
 - **Built-in playback** — registers as a Spotify Connect device, plays audio directly
 - Play/pause, skip, seek, volume, shuffle, repeat
-- Browse and play playlists
+- Browse and play playlists and saved albums
 - Liked songs library
+- Customize what shows in the sidebar (playlists, albums, liked songs)
 - Theme system with multiple presets (cyan, spotify, dracula)
 - In-app settings view with fully remappable keybindings
 - Vim-style and arrow key navigation
