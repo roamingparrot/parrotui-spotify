@@ -5,14 +5,16 @@ pub enum SettingsTab {
     Appearance,
     Playback,
     Behavior,
+    Sidebar,
     Keybindings,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 4] = [
+    pub const ALL: [SettingsTab; 5] = [
         Self::Appearance,
         Self::Playback,
         Self::Behavior,
+        Self::Sidebar,
         Self::Keybindings,
     ];
 
@@ -21,6 +23,7 @@ impl SettingsTab {
             Self::Appearance => "Appearance",
             Self::Playback => "Playback",
             Self::Behavior => "Behavior",
+            Self::Sidebar => "Sidebar",
             Self::Keybindings => "Keybindings",
         }
     }
@@ -39,6 +42,11 @@ impl SettingsTab {
                 SettingKey::AudioCacheMb,
             ],
             Self::Behavior => &[SettingKey::TickRate, SettingKey::RefreshInterval],
+            Self::Sidebar => &[
+                SettingKey::ShowLikedSongs,
+                SettingKey::ShowPlaylists,
+                SettingKey::ShowAlbums,
+            ],
             Self::Keybindings => &[],
         }
     }
@@ -73,6 +81,9 @@ pub enum SettingKey {
     AudioCacheMb,
     TickRate,
     RefreshInterval,
+    ShowLikedSongs,
+    ShowPlaylists,
+    ShowAlbums,
 }
 
 impl SettingKey {
@@ -88,6 +99,9 @@ impl SettingKey {
             Self::AudioCacheMb => "Audio cache (MB)",
             Self::TickRate => "Tick rate (ms)",
             Self::RefreshInterval => "Refresh interval (seconds)",
+            Self::ShowLikedSongs => "Show Liked Songs",
+            Self::ShowPlaylists => "Show Playlists",
+            Self::ShowAlbums => "Show Albums",
         }
     }
 
@@ -117,6 +131,9 @@ impl SettingKey {
             },
             Self::TickRate => SettingKind::Number { min: 10, max: 1000 },
             Self::RefreshInterval => SettingKind::Number { min: 1, max: 3600 },
+            Self::ShowLikedSongs | Self::ShowPlaylists | Self::ShowAlbums => {
+                SettingKind::Choice(&["on", "off"])
+            }
         }
     }
 
@@ -139,6 +156,24 @@ impl SettingKey {
             Self::AudioCacheMb => config.audio_cache_mb.to_string(),
             Self::TickRate => config.tick_rate_ms.to_string(),
             Self::RefreshInterval => config.refresh_interval_secs.to_string(),
+            Self::ShowLikedSongs => if config.sidebar_show_liked_songs {
+                "on"
+            } else {
+                "off"
+            }
+            .to_string(),
+            Self::ShowPlaylists => if config.sidebar_show_playlists {
+                "on"
+            } else {
+                "off"
+            }
+            .to_string(),
+            Self::ShowAlbums => if config.sidebar_show_albums {
+                "on"
+            } else {
+                "off"
+            }
+            .to_string(),
         }
     }
 
@@ -176,6 +211,9 @@ impl SettingKey {
                 }
                 config.device_name = raw.to_string();
             }
+            Self::ShowLikedSongs => config.sidebar_show_liked_songs = raw == "on",
+            Self::ShowPlaylists => config.sidebar_show_playlists = raw == "on",
+            Self::ShowAlbums => config.sidebar_show_albums = raw == "on",
             _ => return false,
         }
         true
@@ -194,6 +232,9 @@ impl SettingKey {
             Self::AudioCacheMb => config.audio_cache_mb = d.audio_cache_mb,
             Self::TickRate => config.tick_rate_ms = d.tick_rate_ms,
             Self::RefreshInterval => config.refresh_interval_secs = d.refresh_interval_secs,
+            Self::ShowLikedSongs => config.sidebar_show_liked_songs = d.sidebar_show_liked_songs,
+            Self::ShowPlaylists => config.sidebar_show_playlists = d.sidebar_show_playlists,
+            Self::ShowAlbums => config.sidebar_show_albums = d.sidebar_show_albums,
         }
     }
 }
@@ -348,6 +389,9 @@ mod tests {
             SettingKey::AudioCacheMb,
             SettingKey::TickRate,
             SettingKey::RefreshInterval,
+            SettingKey::ShowLikedSongs,
+            SettingKey::ShowPlaylists,
+            SettingKey::ShowAlbums,
         ];
         for key in all {
             let count = SettingsTab::ALL
@@ -387,6 +431,9 @@ mod tests {
             SettingKey::Theme,
             SettingKey::Bitrate,
             SettingKey::Normalisation,
+            SettingKey::ShowLikedSongs,
+            SettingKey::ShowPlaylists,
+            SettingKey::ShowAlbums,
         ] {
             let SettingKind::Choice(options) = key.kind() else {
                 panic!("{key:?} should be a choice");
