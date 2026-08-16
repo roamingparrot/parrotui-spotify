@@ -3,7 +3,9 @@ use std::time::Duration;
 use crate::api::{self, SpotifyClient};
 use crate::error::{Result, SpotError};
 use crate::playback::PlaybackEngine;
-use crate::state::{App, ContentView, FocusPanel, Notification, SearchTab, SidebarItem};
+use crate::state::{
+    App, ContentView, FocusPanel, Notification, SearchTab, SidebarItem, SidebarSectionKind,
+};
 
 const PAGE_SIZE: u32 = 50;
 
@@ -33,6 +35,7 @@ pub enum Action {
     // Data — fetched from Web API (async, spawned)
     RefreshPlayback,
     LoadPlaylists,
+    LoadAlbums,
     #[allow(dead_code)]
     LoadLikedSongs,
     LoadMore,
@@ -82,6 +85,14 @@ pub enum ActionResult {
     },
     MoreSidebarPlaylists {
         items: Vec<api::Playlist>,
+        total: u32,
+    },
+    Albums {
+        items: Vec<api::Album>,
+        total: u32,
+    },
+    MoreSidebarAlbums {
+        items: Vec<api::Album>,
         total: u32,
     },
     MorePlaylistTracks {
@@ -276,9 +287,11 @@ fn handle_select_sync(app: &mut App, _engine: &PlaybackEngine) -> Option<Action>
 /// Snapshot of app state needed by async tasks (avoids borrowing App).
 struct AsyncContext {
     focus: FocusPanel,
-    sidebar_item: SidebarItem,
+    sidebar_item: Option<SidebarItem>,
+    sidebar_section: Option<SidebarSectionKind>,
     content_snapshot: ContentSnapshot,
-    sidebar_loaded: u32,
+    sidebar_playlists_loaded: u32,
+    sidebar_albums_loaded: u32,
     sidebar_can_load_more: bool,
     content_can_load_more: bool,
     content_loaded: u32,
@@ -324,9 +337,11 @@ fn snapshot(app: &App) -> AsyncContext {
     });
     AsyncContext {
         focus: app.focus,
-        sidebar_item: app.current_sidebar_item().clone(),
+        sidebar_item: app.current_sidebar_item().cloned(),
+        sidebar_section: app.current_sidebar_section(),
         content_snapshot,
-        sidebar_loaded: app.sidebar_items.len().saturating_sub(1) as u32,
+        sidebar_playlists_loaded: app.sidebar_playlists.len() as u32,
+        sidebar_albums_loaded: app.sidebar_albums.len() as u32,
         sidebar_can_load_more: app.sidebar_can_load_more(),
         content_can_load_more: app.content.can_load_more(),
         content_loaded: app.content.len() as u32,
@@ -362,6 +377,14 @@ async fn run_async(
 
         Action::LoadPlaylists => match load_playlists_async(client).await {
             Ok((items, total)) => ActionResult::Playlists { items, total },
+            Err(e) => ActionResult::Failed { error: e },
+        },
+
+        Action::LoadAlbums => match client.my_albums(PAGE_SIZE, 0).await {
+            Ok(page) => ActionResult::Albums {
+                items: page.items.into_iter().map(|sa| sa.album).collect(),
+                total: page.total,
+            },
             Err(e) => ActionResult::Failed { error: e },
         },
 
@@ -433,21 +456,12 @@ async fn run_async(
             artist_name,
         } => match client.album_tracks(&album_id, 50, 0).await {
             Ok(page) => {
-                let tracks: Vec<api::Track> = page
-                    .items
-                    .into_iter()
-                    .map(|at| api::Track {
-                        name: at.name,
-                        uri: at.uri,
-                        duration_ms: at.duration_ms,
-                        artists: at.artists,
-                    })
-                    .collect();
+                let (tracks, total) = album_tracks_from_page(page);
                 ActionResult::AlbumTracks {
                     album_name,
                     album_uri,
                     artist_name,
-                    total: page.total,
+                    total,
                     tracks,
                 }
             }
@@ -487,6 +501,22 @@ async fn run_async(
     }
 }
 
+/// Convert an album tracks page into the generic `Track` type shared by every
+/// content view.
+fn album_tracks_from_page(page: api::Page<api::AlbumTrack>) -> (Vec<api::Track>, u32) {
+    let tracks = page
+        .items
+        .into_iter()
+        .map(|at| api::Track {
+            name: at.name,
+            uri: at.uri,
+            duration_ms: at.duration_ms,
+            artists: at.artists,
+        })
+        .collect();
+    (tracks, page.total)
+}
+
 async fn load_playlists_async(client: &SpotifyClient) -> Result<(Vec<api::Playlist>, u32)> {
     let page = client.my_playlists(PAGE_SIZE, 0).await?;
     let total = page.total;
@@ -523,12 +553,29 @@ async fn load_more_async(ctx: AsyncContext, client: &SpotifyClient) -> ActionRes
             if !ctx.sidebar_can_load_more {
                 return ActionResult::PlaybackStarted; // no-op
             }
-            match client.my_playlists(PAGE_SIZE, ctx.sidebar_loaded).await {
-                Ok(page) => ActionResult::MoreSidebarPlaylists {
-                    items: page.items,
-                    total: page.total,
-                },
-                Err(e) => ActionResult::Failed { error: e },
+            match ctx.sidebar_section {
+                Some(SidebarSectionKind::Playlists) => {
+                    match client
+                        .my_playlists(PAGE_SIZE, ctx.sidebar_playlists_loaded)
+                        .await
+                    {
+                        Ok(page) => ActionResult::MoreSidebarPlaylists {
+                            items: page.items,
+                            total: page.total,
+                        },
+                        Err(e) => ActionResult::Failed { error: e },
+                    }
+                }
+                Some(SidebarSectionKind::Albums) => {
+                    match client.my_albums(PAGE_SIZE, ctx.sidebar_albums_loaded).await {
+                        Ok(page) => ActionResult::MoreSidebarAlbums {
+                            items: page.items.into_iter().map(|sa| sa.album).collect(),
+                            total: page.total,
+                        },
+                        Err(e) => ActionResult::Failed { error: e },
+                    }
+                }
+                Some(SidebarSectionKind::LikedSongs) | None => ActionResult::PlaybackStarted,
             }
         }
         FocusPanel::Content => {
@@ -561,18 +608,37 @@ async fn load_more_async(ctx: AsyncContext, client: &SpotifyClient) -> ActionRes
 async fn select_async(ctx: AsyncContext, client: &SpotifyClient, device_id: &str) -> ActionResult {
     match ctx.focus {
         FocusPanel::Sidebar => match ctx.sidebar_item {
-            SidebarItem::LikedSongs => match client.liked_tracks(PAGE_SIZE, 0).await {
+            None => ActionResult::PlaybackStarted,
+            Some(SidebarItem::LikedSongs) => match client.liked_tracks(PAGE_SIZE, 0).await {
                 Ok(page) => ActionResult::LikedSongs { page },
                 Err(e) => ActionResult::Failed { error: e },
             },
-            SidebarItem::Playlist(pl) => match client.playlist_tracks(&pl.id, PAGE_SIZE, 0).await {
-                Ok(page) => ActionResult::PlaylistTracks {
-                    name: pl.name,
-                    uri: pl.uri,
-                    page,
-                },
-                Err(e) => ActionResult::Failed { error: e },
-            },
+            Some(SidebarItem::Playlist(pl)) => {
+                match client.playlist_tracks(&pl.id, PAGE_SIZE, 0).await {
+                    Ok(page) => ActionResult::PlaylistTracks {
+                        name: pl.name,
+                        uri: pl.uri,
+                        page,
+                    },
+                    Err(e) => ActionResult::Failed { error: e },
+                }
+            }
+            Some(SidebarItem::Album(album)) => {
+                match client.album_tracks(&album.id, PAGE_SIZE, 0).await {
+                    Ok(page) => {
+                        let (tracks, total) = album_tracks_from_page(page);
+                        let artist_name = album.artist_names();
+                        ActionResult::AlbumTracks {
+                            album_name: album.name,
+                            album_uri: album.uri,
+                            artist_name,
+                            tracks,
+                            total,
+                        }
+                    }
+                    Err(e) => ActionResult::Failed { error: e },
+                }
+            }
         },
         FocusPanel::Content => {
             // The sync path already set optimistic state; just issue the play call.
@@ -619,6 +685,12 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
         }
         ActionResult::MoreSidebarPlaylists { items, total } => {
             app.append_sidebar_playlists(items, total);
+        }
+        ActionResult::Albums { items, total } => {
+            app.set_sidebar_albums(items, total);
+        }
+        ActionResult::MoreSidebarAlbums { items, total } => {
+            app.append_sidebar_albums(items, total);
         }
         ActionResult::MorePlaylistTracks { page } => {
             app.append_playlist_tracks(page);
@@ -727,6 +799,11 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
             total,
         } => {
             app.set_album_detail(album_name, album_uri, artist_name, tracks, total);
+            // set_album_detail always marks search_origin=true, which is only
+            // correct when opened from Search — correct it here based on
+            // whether a search is actually in progress (mirrors how
+            // PlaylistTracks below determines its origin).
+            app.search_origin = app.search.is_some();
             app.focus = FocusPanel::Content;
         }
         ActionResult::ArtistTopTracksResult {
@@ -849,6 +926,10 @@ fn handle_go_back(app: &mut App) {
         app.content = ContentView::Empty;
         if let Some(search) = &mut app.search {
             search.input_active = false;
+        } else {
+            // No search modal is open, so this drill-down was actually opened
+            // from the sidebar (e.g. an album) — return focus there too.
+            app.focus = FocusPanel::Sidebar;
         }
     } else {
         app.focus = FocusPanel::Sidebar;
@@ -900,8 +981,9 @@ fn handle_search_select_sync(app: &mut App) -> Option<Action> {
 fn copy_link(app: &mut App) {
     let uri = match app.focus {
         FocusPanel::Sidebar => match app.current_sidebar_item() {
-            SidebarItem::LikedSongs => None,
-            SidebarItem::Playlist(pl) => Some(pl.uri.clone()),
+            None | Some(SidebarItem::LikedSongs) => None,
+            Some(SidebarItem::Playlist(pl)) => Some(pl.uri.clone()),
+            Some(SidebarItem::Album(album)) => Some(album.uri.clone()),
         },
         FocusPanel::Content => {
             let tracks = app.content.tracks();

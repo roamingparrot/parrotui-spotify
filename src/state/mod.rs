@@ -198,6 +198,16 @@ pub enum FocusPanel {
 pub enum SidebarItem {
     LikedSongs,
     Playlist(Playlist),
+    Album(Album),
+}
+
+/// Which section of the sidebar the cursor is currently sitting in — used to
+/// route pagination (`LoadMore`) to the right underlying list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarSectionKind {
+    LikedSongs,
+    Playlists,
+    Albums,
 }
 
 #[derive(Debug, Clone)]
@@ -346,8 +356,12 @@ pub struct App {
     pub focus: FocusPanel,
     pub sidebar_cursor: usize,
     pub sidebar_items: Vec<SidebarItem>,
-    pub sidebar_total: u32,
-    pub sidebar_loading: bool,
+    pub sidebar_playlists: Vec<Playlist>,
+    pub sidebar_playlists_total: u32,
+    pub sidebar_playlists_loading: bool,
+    pub sidebar_albums: Vec<Album>,
+    pub sidebar_albums_total: u32,
+    pub sidebar_albums_loading: bool,
 
     pub content: ContentView,
     pub show_help: bool,
@@ -373,8 +387,10 @@ pub struct App {
     pub track_marquee: MarqueeState,
 
     // Viewport scroll offsets (persisted across frames so the list only
-    // scrolls when the cursor leaves the visible area).
-    pub sidebar_scroll_offset: usize,
+    // scrolls when the cursor leaves the visible area). Playlists and Albums
+    // scroll independently since they're separate lists.
+    pub sidebar_playlists_scroll_offset: usize,
+    pub sidebar_albums_scroll_offset: usize,
     pub content_scroll_offset: usize,
 
     // Deferred jump — set when G is pressed but not all tracks are loaded yet.
@@ -405,14 +421,18 @@ impl App {
         let theme = Theme::from_name(&config.theme);
         let device_name = config.device_name.clone();
         let volume = config.initial_volume;
-        Self {
+        let mut app = Self {
             running: true,
             config,
             focus: FocusPanel::Sidebar,
             sidebar_cursor: 0,
-            sidebar_items: vec![SidebarItem::LikedSongs],
-            sidebar_total: 0,
-            sidebar_loading: true,
+            sidebar_items: Vec::new(),
+            sidebar_playlists: Vec::new(),
+            sidebar_playlists_total: 0,
+            sidebar_playlists_loading: true,
+            sidebar_albums: Vec::new(),
+            sidebar_albums_total: 0,
+            sidebar_albums_loading: true,
             content: ContentView::Empty,
             show_help: false,
             notification: None,
@@ -429,7 +449,8 @@ impl App {
             pending_keys: Vec::new(),
             sidebar_marquee: MarqueeState::new(),
             track_marquee: MarqueeState::new(),
-            sidebar_scroll_offset: 0,
+            sidebar_playlists_scroll_offset: 0,
+            sidebar_albums_scroll_offset: 0,
             content_scroll_offset: 0,
             pending_jump_to_bottom: false,
             rate_limited_until: None,
@@ -441,21 +462,97 @@ impl App {
             search: None,
             search_origin: false,
             settings: None,
-        }
+        };
+        app.rebuild_sidebar_items();
+        app
     }
 
     /// Re-derive whatever is cached out of the config after a settings edit.
     pub fn apply_config(&mut self) {
         self.theme = Theme::from_name(&self.config.theme);
+        self.rebuild_sidebar_items();
     }
 
-    pub fn current_sidebar_item(&self) -> &SidebarItem {
-        &self.sidebar_items[self.sidebar_cursor]
+    /// Rebuild the flattened, cursor/render-facing `sidebar_items` from the
+    /// underlying per-section data, filtered by which sections are enabled
+    /// in config. Order is fixed: Liked Songs, then Playlists, then Albums.
+    pub fn rebuild_sidebar_items(&mut self) {
+        let mut items = Vec::new();
+        if self.config.sidebar_show_liked_songs {
+            items.push(SidebarItem::LikedSongs);
+        }
+        if self.config.sidebar_show_playlists {
+            items.extend(
+                self.sidebar_playlists
+                    .iter()
+                    .cloned()
+                    .map(SidebarItem::Playlist),
+            );
+        }
+        if self.config.sidebar_show_albums {
+            items.extend(self.sidebar_albums.iter().cloned().map(SidebarItem::Album));
+        }
+        self.sidebar_items = items;
+        self.sidebar_cursor = self
+            .sidebar_cursor
+            .min(self.sidebar_items.len().saturating_sub(1));
+    }
+
+    pub fn current_sidebar_item(&self) -> Option<&SidebarItem> {
+        self.sidebar_items.get(self.sidebar_cursor)
+    }
+
+    pub fn current_sidebar_section(&self) -> Option<SidebarSectionKind> {
+        match self.current_sidebar_item()? {
+            SidebarItem::LikedSongs => Some(SidebarSectionKind::LikedSongs),
+            SidebarItem::Playlist(_) => Some(SidebarSectionKind::Playlists),
+            SidebarItem::Album(_) => Some(SidebarSectionKind::Albums),
+        }
     }
 
     pub fn sidebar_can_load_more(&self) -> bool {
-        let playlist_count = self.sidebar_items.len().saturating_sub(1) as u32;
-        playlist_count < self.sidebar_total && !self.sidebar_loading
+        match self.current_sidebar_section() {
+            Some(SidebarSectionKind::Playlists) => {
+                (self.sidebar_playlists.len() as u32) < self.sidebar_playlists_total
+                    && !self.sidebar_playlists_loading
+            }
+            Some(SidebarSectionKind::Albums) => {
+                (self.sidebar_albums.len() as u32) < self.sidebar_albums_total
+                    && !self.sidebar_albums_loading
+            }
+            Some(SidebarSectionKind::LikedSongs) | None => false,
+        }
+    }
+
+    /// Index in `sidebar_items` where the Playlists section begins (0 or 1,
+    /// depending on whether Liked Songs is shown ahead of it).
+    pub fn sidebar_playlists_start(&self) -> usize {
+        if self.config.sidebar_show_liked_songs {
+            1
+        } else {
+            0
+        }
+    }
+
+    /// Index in `sidebar_items` where the Albums section begins.
+    pub fn sidebar_albums_start(&self) -> usize {
+        self.sidebar_playlists_start()
+            + if self.config.sidebar_show_playlists {
+                self.sidebar_playlists.len()
+            } else {
+                0
+            }
+    }
+
+    /// Exclusive end index (within `sidebar_items`) of whichever section the
+    /// cursor currently sits in. Used to detect "near the bottom of this
+    /// section" for pagination, independent of what other sections follow.
+    pub fn sidebar_current_section_end(&self) -> usize {
+        match self.current_sidebar_section() {
+            Some(SidebarSectionKind::LikedSongs) => self.sidebar_playlists_start(),
+            Some(SidebarSectionKind::Playlists) => self.sidebar_albums_start(),
+            Some(SidebarSectionKind::Albums) | None => self.sidebar_items.len(),
+        }
     }
 
     pub fn notify(&mut self, n: Notification) {
@@ -530,7 +627,8 @@ impl App {
         match self.focus {
             FocusPanel::Sidebar => {
                 self.sidebar_cursor = 0;
-                self.sidebar_scroll_offset = 0;
+                self.sidebar_playlists_scroll_offset = 0;
+                self.sidebar_albums_scroll_offset = 0;
             }
             FocusPanel::Content => {
                 if self.content.len() > 0 {
@@ -545,7 +643,8 @@ impl App {
         match self.focus {
             FocusPanel::Sidebar => {
                 self.sidebar_cursor = self.sidebar_items.len().saturating_sub(1);
-                self.sidebar_scroll_offset = 0;
+                self.sidebar_playlists_scroll_offset = 0;
+                self.sidebar_albums_scroll_offset = 0;
             }
             FocusPanel::Content => {
                 if self.content.len() > 0 {
@@ -570,19 +669,33 @@ impl App {
     }
 
     pub fn set_sidebar_playlists(&mut self, playlists: Vec<Playlist>, total: u32) {
-        self.sidebar_items = vec![SidebarItem::LikedSongs];
-        self.sidebar_items
-            .extend(playlists.into_iter().map(SidebarItem::Playlist));
-        self.sidebar_total = total;
-        self.sidebar_loading = false;
-        self.sidebar_scroll_offset = 0;
+        self.sidebar_playlists = playlists;
+        self.sidebar_playlists_total = total;
+        self.sidebar_playlists_loading = false;
+        self.sidebar_playlists_scroll_offset = 0;
+        self.rebuild_sidebar_items();
     }
 
     pub fn append_sidebar_playlists(&mut self, playlists: Vec<Playlist>, total: u32) {
-        self.sidebar_items
-            .extend(playlists.into_iter().map(SidebarItem::Playlist));
-        self.sidebar_total = total;
-        self.sidebar_loading = false;
+        self.sidebar_playlists.extend(playlists);
+        self.sidebar_playlists_total = total;
+        self.sidebar_playlists_loading = false;
+        self.rebuild_sidebar_items();
+    }
+
+    pub fn set_sidebar_albums(&mut self, albums: Vec<Album>, total: u32) {
+        self.sidebar_albums = albums;
+        self.sidebar_albums_total = total;
+        self.sidebar_albums_loading = false;
+        self.sidebar_albums_scroll_offset = 0;
+        self.rebuild_sidebar_items();
+    }
+
+    pub fn append_sidebar_albums(&mut self, albums: Vec<Album>, total: u32) {
+        self.sidebar_albums.extend(albums);
+        self.sidebar_albums_total = total;
+        self.sidebar_albums_loading = false;
+        self.rebuild_sidebar_items();
     }
 
     pub fn set_playlist_tracks(&mut self, name: String, uri: String, page: Page<PlaylistItem>) {
@@ -693,5 +806,100 @@ impl App {
         };
         self.content_scroll_offset = 0;
         self.search_origin = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::Artist;
+
+    fn app() -> App {
+        App::new(Config::default(), Keymap::default(), "device".to_string())
+    }
+
+    fn sample_playlist(name: &str) -> Playlist {
+        Playlist {
+            id: "pl-id".into(),
+            name: name.into(),
+            uri: "spotify:playlist:pl-id".into(),
+            tracks: None,
+        }
+    }
+
+    fn sample_album(name: &str) -> Album {
+        Album {
+            id: "al-id".into(),
+            name: name.into(),
+            uri: "spotify:album:al-id".into(),
+            artists: vec![Artist {
+                name: "Artist".into(),
+            }],
+            total_tracks: 10,
+            images: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn default_config_shows_all_sections() {
+        let mut app = app();
+        app.set_sidebar_playlists(vec![sample_playlist("P1")], 1);
+        app.set_sidebar_albums(vec![sample_album("A1")], 1);
+
+        assert!(matches!(app.sidebar_items[0], SidebarItem::LikedSongs));
+        assert!(matches!(app.sidebar_items[1], SidebarItem::Playlist(_)));
+        assert!(matches!(app.sidebar_items[2], SidebarItem::Album(_)));
+        assert_eq!(app.sidebar_items.len(), 3);
+    }
+
+    #[test]
+    fn disabling_a_section_removes_it_and_clamps_the_cursor() {
+        let mut app = app();
+        app.set_sidebar_playlists(vec![sample_playlist("P1")], 1);
+        app.set_sidebar_albums(vec![sample_album("A1")], 1);
+        app.sidebar_cursor = 2; // sitting on the album
+
+        app.config.sidebar_show_albums = false;
+        app.rebuild_sidebar_items();
+
+        assert_eq!(app.sidebar_items.len(), 2);
+        assert_eq!(app.sidebar_cursor, 1, "cursor should clamp to the new end");
+        assert!(
+            app.sidebar_items
+                .iter()
+                .all(|i| !matches!(i, SidebarItem::Album(_)))
+        );
+    }
+
+    #[test]
+    fn disabling_everything_empties_the_sidebar_without_panicking() {
+        let mut app = app();
+        app.set_sidebar_playlists(vec![sample_playlist("P1")], 1);
+        app.set_sidebar_albums(vec![sample_album("A1")], 1);
+
+        app.config.sidebar_show_liked_songs = false;
+        app.config.sidebar_show_playlists = false;
+        app.config.sidebar_show_albums = false;
+        app.rebuild_sidebar_items();
+
+        assert!(app.sidebar_items.is_empty());
+        assert!(app.current_sidebar_item().is_none());
+        assert!(app.current_sidebar_section().is_none());
+        assert!(!app.sidebar_can_load_more());
+    }
+
+    #[test]
+    fn sidebar_section_starts_account_for_hidden_sections() {
+        let mut app = app();
+        app.set_sidebar_playlists(vec![sample_playlist("P1"), sample_playlist("P2")], 2);
+        app.set_sidebar_albums(vec![sample_album("A1")], 1);
+
+        assert_eq!(app.sidebar_playlists_start(), 1);
+        assert_eq!(app.sidebar_albums_start(), 3);
+
+        app.config.sidebar_show_liked_songs = false;
+        app.rebuild_sidebar_items();
+        assert_eq!(app.sidebar_playlists_start(), 0);
+        assert_eq!(app.sidebar_albums_start(), 2);
     }
 }
