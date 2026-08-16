@@ -396,8 +396,8 @@ fn near_bottom(app: &App) -> bool {
     match app.focus {
         FocusPanel::Sidebar => {
             let cursor = app.sidebar_cursor;
-            let len = app.sidebar_items.len();
-            len > 0 && cursor + 5 >= len && app.sidebar_can_load_more()
+            let section_end = app.sidebar_current_section_end();
+            section_end > 0 && cursor + 5 >= section_end && app.sidebar_can_load_more()
         }
         FocusPanel::Content => {
             let cursor = app.content.cursor();

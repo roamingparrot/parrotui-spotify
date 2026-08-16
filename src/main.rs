@@ -72,6 +72,13 @@ async fn main() -> color_eyre::Result<()> {
         action_tx.clone(),
     );
     player::dispatch_async(
+        Action::LoadAlbums,
+        &app,
+        client.clone(),
+        device_id.clone(),
+        action_tx.clone(),
+    );
+    player::dispatch_async(
         Action::RefreshPlayback,
         &app,
         client.clone(),
@@ -229,10 +236,19 @@ async fn main() -> color_eyre::Result<()> {
                 }
             }
 
-            // Retry loading playlists if the initial attempt failed.
-            if app.sidebar_items.len() <= 1 {
+            // Retry loading playlists/albums if the initial attempt failed.
+            if app.sidebar_playlists.is_empty() {
                 player::dispatch_async(
                     Action::LoadPlaylists,
+                    &app,
+                    client.clone(),
+                    device_id.clone(),
+                    action_tx.clone(),
+                );
+            }
+            if app.sidebar_albums.is_empty() {
+                player::dispatch_async(
+                    Action::LoadAlbums,
                     &app,
                     client.clone(),
                     device_id.clone(),
