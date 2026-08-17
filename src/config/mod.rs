@@ -35,6 +35,9 @@ pub struct Config {
     pub sidebar_show_albums: bool,
     #[serde(default = "default_true")]
     pub sidebar_show_liked_songs: bool,
+    /// false = a separate bordered block per section; true = one combined list.
+    #[serde(default)]
+    pub sidebar_combined_layout: bool,
 }
 
 fn default_tick_rate() -> u64 {
@@ -81,6 +84,7 @@ impl Default for Config {
             sidebar_show_playlists: default_true(),
             sidebar_show_albums: default_true(),
             sidebar_show_liked_songs: default_true(),
+            sidebar_combined_layout: false,
         }
     }
 }
@@ -169,6 +173,7 @@ mod tests {
             sidebar_show_playlists: true,
             sidebar_show_albums: false,
             sidebar_show_liked_songs: true,
+            sidebar_combined_layout: true,
         };
 
         let toml_str = toml::to_string_pretty(&config).expect("should serialize");
@@ -190,6 +195,10 @@ mod tests {
             parsed.sidebar_show_liked_songs,
             config.sidebar_show_liked_songs
         );
+        assert_eq!(
+            parsed.sidebar_combined_layout,
+            config.sidebar_combined_layout
+        );
     }
 
     #[test]
@@ -205,5 +214,6 @@ mod tests {
         assert!(parsed.sidebar_show_playlists);
         assert!(parsed.sidebar_show_albums);
         assert!(parsed.sidebar_show_liked_songs);
+        assert!(!parsed.sidebar_combined_layout);
     }
 }
