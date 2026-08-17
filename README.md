@@ -46,6 +46,22 @@ This downloads the latest release binary for your platform and puts it in `/usr/
 INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/roamingparrot/parrotui-spotify/main/install.sh | sh
 ```
 
+### Quick install (Windows)
+
+```powershell
+irm https://raw.githubusercontent.com/roamingparrot/parrotui-spotify/main/install.ps1 | iex
+```
+
+This downloads the latest release binary and installs it to
+`%LOCALAPPDATA%\Programs\parrotui-spotify`, adding that folder to your user
+`PATH` if it isn't there already (restart your terminal afterwards). To
+install elsewhere:
+
+```powershell
+$env:INSTALL_DIR = "C:\tools\parrotui-spotify"
+irm https://raw.githubusercontent.com/roamingparrot/parrotui-spotify/main/install.ps1 | iex
+```
+
 ### From source
 
 ```sh
