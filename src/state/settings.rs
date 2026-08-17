@@ -323,15 +323,21 @@ impl ValueEditor {
         if let Self::Choice {
             options, cursor, ..
         } = self
-            && *cursor + 1 < options.len()
         {
-            *cursor += 1;
+            *cursor = (*cursor + 1) % options.len();
         }
     }
 
     pub fn move_up(&mut self) {
-        if let Self::Choice { cursor, .. } = self {
-            *cursor = cursor.saturating_sub(1);
+        if let Self::Choice {
+            options, cursor, ..
+        } = self
+        {
+            *cursor = if *cursor == 0 {
+                options.len() - 1
+            } else {
+                *cursor - 1
+            };
         }
     }
 
@@ -488,15 +494,26 @@ mod tests {
     }
 
     #[test]
-    fn choice_cursor_stops_at_the_ends() {
+    fn choice_cursor_wraps_at_the_ends() {
         let config = Config::default();
+        // Bitrate defaults to 160, the middle of ["96", "160", "320"].
         let mut editor = ValueEditor::open(SettingKey::Bitrate, &config);
+
         editor.move_up();
         assert_eq!(editor.selection(), "96");
-        for _ in 0..10 {
-            editor.move_down();
-        }
-        assert_eq!(editor.selection(), "320");
+        editor.move_up();
+        assert_eq!(
+            editor.selection(),
+            "320",
+            "up from the top wraps to the bottom"
+        );
+
+        editor.move_down();
+        assert_eq!(
+            editor.selection(),
+            "96",
+            "down from the bottom wraps to the top"
+        );
     }
 
     #[test]
