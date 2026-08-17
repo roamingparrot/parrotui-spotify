@@ -43,6 +43,7 @@ impl SettingsTab {
             ],
             Self::Behavior => &[SettingKey::TickRate, SettingKey::RefreshInterval],
             Self::Sidebar => &[
+                SettingKey::SidebarLayout,
                 SettingKey::ShowLikedSongs,
                 SettingKey::ShowPlaylists,
                 SettingKey::ShowAlbums,
@@ -84,6 +85,7 @@ pub enum SettingKey {
     ShowLikedSongs,
     ShowPlaylists,
     ShowAlbums,
+    SidebarLayout,
 }
 
 impl SettingKey {
@@ -102,6 +104,7 @@ impl SettingKey {
             Self::ShowLikedSongs => "Show Liked Songs",
             Self::ShowPlaylists => "Show Playlists",
             Self::ShowAlbums => "Show Albums",
+            Self::SidebarLayout => "Sidebar layout",
         }
     }
 
@@ -134,6 +137,7 @@ impl SettingKey {
             Self::ShowLikedSongs | Self::ShowPlaylists | Self::ShowAlbums => {
                 SettingKind::Choice(&["on", "off"])
             }
+            Self::SidebarLayout => SettingKind::Choice(&["separated", "combined"]),
         }
     }
 
@@ -172,6 +176,12 @@ impl SettingKey {
                 "on"
             } else {
                 "off"
+            }
+            .to_string(),
+            Self::SidebarLayout => if config.sidebar_combined_layout {
+                "combined"
+            } else {
+                "separated"
             }
             .to_string(),
         }
@@ -214,6 +224,7 @@ impl SettingKey {
             Self::ShowLikedSongs => config.sidebar_show_liked_songs = raw == "on",
             Self::ShowPlaylists => config.sidebar_show_playlists = raw == "on",
             Self::ShowAlbums => config.sidebar_show_albums = raw == "on",
+            Self::SidebarLayout => config.sidebar_combined_layout = raw == "combined",
             _ => return false,
         }
         true
@@ -235,6 +246,7 @@ impl SettingKey {
             Self::ShowLikedSongs => config.sidebar_show_liked_songs = d.sidebar_show_liked_songs,
             Self::ShowPlaylists => config.sidebar_show_playlists = d.sidebar_show_playlists,
             Self::ShowAlbums => config.sidebar_show_albums = d.sidebar_show_albums,
+            Self::SidebarLayout => config.sidebar_combined_layout = d.sidebar_combined_layout,
         }
     }
 }
@@ -392,6 +404,7 @@ mod tests {
             SettingKey::ShowLikedSongs,
             SettingKey::ShowPlaylists,
             SettingKey::ShowAlbums,
+            SettingKey::SidebarLayout,
         ];
         for key in all {
             let count = SettingsTab::ALL
@@ -434,6 +447,7 @@ mod tests {
             SettingKey::ShowLikedSongs,
             SettingKey::ShowPlaylists,
             SettingKey::ShowAlbums,
+            SettingKey::SidebarLayout,
         ] {
             let SettingKind::Choice(options) = key.kind() else {
                 panic!("{key:?} should be a choice");
