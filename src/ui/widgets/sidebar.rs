@@ -3,7 +3,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState};
 
-use crate::state::{App, FocusPanel};
+use crate::state::{App, FocusPanel, SidebarItem};
 use crate::ui::marquee::{marquee_text, truncate_unicode};
 use crate::ui::theme::{Theme, panel_style};
 
@@ -14,6 +14,23 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     let show_playlists = app.config.sidebar_show_playlists;
     let show_albums = app.config.sidebar_show_albums;
 
+    if !show_liked && !show_playlists && !show_albums {
+        return;
+    }
+
+    if app.config.sidebar_combined_layout {
+        draw_combined(
+            frame,
+            app,
+            area,
+            focused,
+            theme,
+            show_playlists,
+            show_albums,
+        );
+        return;
+    }
+
     let mut constraints = Vec::new();
     if show_liked {
         constraints.push(Constraint::Length(3));
@@ -23,9 +40,6 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     }
     if show_albums {
         constraints.push(Constraint::Min(0));
-    }
-    if constraints.is_empty() {
-        return;
     }
 
     let sections = Layout::vertical(constraints).split(area);
@@ -80,6 +94,45 @@ pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         );
         app.sidebar_albums_scroll_offset = offset;
     }
+}
+
+/// Renders every visible section as one continuous list under a single
+/// "Library" border, instead of a separate block per section.
+fn draw_combined(
+    frame: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    focused: bool,
+    theme: &Theme,
+    show_playlists: bool,
+    show_albums: bool,
+) {
+    let labels: Vec<String> = app
+        .sidebar_items
+        .iter()
+        .map(|item| match item {
+            SidebarItem::LikedSongs => "♥ Liked Songs".to_string(),
+            SidebarItem::Playlist(pl) => pl.name.clone(),
+            SidebarItem::Album(al) => al.name.clone(),
+        })
+        .collect();
+    let loading = (show_playlists && app.sidebar_playlists_loading)
+        || (show_albums && app.sidebar_albums_loading);
+
+    let mut offset = app.sidebar_combined_scroll_offset;
+    draw_item_list(
+        frame,
+        app,
+        area,
+        focused,
+        theme,
+        "Library",
+        &labels,
+        0,
+        loading,
+        &mut offset,
+    );
+    app.sidebar_combined_scroll_offset = offset;
 }
 
 fn draw_library(frame: &mut Frame, app: &App, area: Rect, focused: bool, theme: &Theme) {
@@ -251,5 +304,28 @@ mod tests {
 
         render(&mut app, 60, 30);
         assert!(app.current_sidebar_item().is_none());
+    }
+
+    #[test]
+    fn combined_layout_merges_sections_into_one_block() {
+        let mut app = App::new(Config::default(), Keymap::default(), "device".to_string());
+        app.config.sidebar_combined_layout = true;
+        app.set_sidebar_albums(vec![sample_album("My Album")], 1);
+
+        let text = render(&mut app, 60, 30);
+        assert!(text.contains("Library"));
+        assert!(text.contains("Liked Songs"));
+        assert!(text.contains("My Album"));
+        assert!(!text.contains("Playlists"));
+        assert!(!text.contains("Albums"));
+    }
+
+    #[test]
+    fn separated_layout_keeps_distinct_titles() {
+        let mut app = App::new(Config::default(), Keymap::default(), "device".to_string());
+        app.set_sidebar_albums(vec![sample_album("My Album")], 1);
+
+        let text = render(&mut app, 60, 30);
+        assert!(text.contains("Albums"));
     }
 }

@@ -388,9 +388,12 @@ pub struct App {
 
     // Viewport scroll offsets (persisted across frames so the list only
     // scrolls when the cursor leaves the visible area). Playlists and Albums
-    // scroll independently since they're separate lists.
+    // scroll independently since they're separate lists in the default
+    // layout; the combined layout has its own since it's a third, distinct
+    // list (all sections merged into one).
     pub sidebar_playlists_scroll_offset: usize,
     pub sidebar_albums_scroll_offset: usize,
+    pub sidebar_combined_scroll_offset: usize,
     pub content_scroll_offset: usize,
 
     // Deferred jump — set when G is pressed but not all tracks are loaded yet.
@@ -451,6 +454,7 @@ impl App {
             track_marquee: MarqueeState::new(),
             sidebar_playlists_scroll_offset: 0,
             sidebar_albums_scroll_offset: 0,
+            sidebar_combined_scroll_offset: 0,
             content_scroll_offset: 0,
             pending_jump_to_bottom: false,
             rate_limited_until: None,
@@ -629,6 +633,7 @@ impl App {
                 self.sidebar_cursor = 0;
                 self.sidebar_playlists_scroll_offset = 0;
                 self.sidebar_albums_scroll_offset = 0;
+                self.sidebar_combined_scroll_offset = 0;
             }
             FocusPanel::Content => {
                 if self.content.len() > 0 {
@@ -645,6 +650,7 @@ impl App {
                 self.sidebar_cursor = self.sidebar_items.len().saturating_sub(1);
                 self.sidebar_playlists_scroll_offset = 0;
                 self.sidebar_albums_scroll_offset = 0;
+                self.sidebar_combined_scroll_offset = 0;
             }
             FocusPanel::Content => {
                 if self.content.len() > 0 {
@@ -673,6 +679,7 @@ impl App {
         self.sidebar_playlists_total = total;
         self.sidebar_playlists_loading = false;
         self.sidebar_playlists_scroll_offset = 0;
+        self.sidebar_combined_scroll_offset = 0;
         self.rebuild_sidebar_items();
     }
 
@@ -688,6 +695,7 @@ impl App {
         self.sidebar_albums_total = total;
         self.sidebar_albums_loading = false;
         self.sidebar_albums_scroll_offset = 0;
+        self.sidebar_combined_scroll_offset = 0;
         self.rebuild_sidebar_items();
     }
 
