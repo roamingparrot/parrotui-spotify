@@ -20,6 +20,8 @@ pub struct PlaybackState {
     pub device: Option<Device>,
     pub shuffle_state: Option<bool>,
     pub repeat_state: Option<String>,
+    #[serde(default)]
+    pub context: Option<PlayContext>,
 }
 
 impl PlaybackState {
@@ -254,4 +256,40 @@ pub struct SearchResults {
     pub albums: Option<Page<Album>>,
     #[serde(default)]
     pub playlists: Option<Page<Playlist>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playback_state_captures_the_playing_context() {
+        let json = r#"{
+            "is_playing": true,
+            "progress_ms": 1000,
+            "item": null,
+            "device": null,
+            "shuffle_state": false,
+            "repeat_state": "off",
+            "context": { "type": "playlist", "uri": "spotify:playlist:abc" }
+        }"#;
+        let state: PlaybackState = serde_json::from_str(json).expect("should parse");
+        let context = state.context.expect("context should be present");
+        assert_eq!(context.context_type, "playlist");
+        assert_eq!(context.uri, "spotify:playlist:abc");
+    }
+
+    #[test]
+    fn playback_state_context_defaults_to_none() {
+        let json = r#"{
+            "is_playing": false,
+            "progress_ms": null,
+            "item": null,
+            "device": null,
+            "shuffle_state": null,
+            "repeat_state": null
+        }"#;
+        let state: PlaybackState = serde_json::from_str(json).expect("should parse");
+        assert!(state.context.is_none());
+    }
 }

@@ -310,6 +310,14 @@ impl SpotifyClient {
         self.get_json(&url).await
     }
 
+    /// Just the name/uri, not the full track list — used to open a playlist
+    /// we only know by id (e.g. the currently-playing context).
+    pub async fn playlist_metadata(&self, playlist_id: &str) -> Result<Playlist> {
+        let url = format!("{BASE}/playlists/{playlist_id}?fields=id,name,uri");
+        tracing::debug!(%url, %playlist_id, "GET playlist metadata");
+        self.get_json(&url).await
+    }
+
     // -- Recently played --
 
     pub async fn recently_played(&self, limit: u32) -> Result<CursorPage<PlayHistory>> {
@@ -341,6 +349,14 @@ impl SpotifyClient {
     ) -> Result<Page<AlbumTrack>> {
         let url = format!("{BASE}/albums/{album_id}/tracks?limit={limit}&offset={offset}");
         tracing::debug!(%url, %album_id, "GET album tracks");
+        self.get_json(&url).await
+    }
+
+    /// Album name/artists, not its tracks — used to open an album we only
+    /// know by id (e.g. the currently-playing context).
+    pub async fn album_metadata(&self, album_id: &str) -> Result<Album> {
+        let url = format!("{BASE}/albums/{album_id}");
+        tracing::debug!(%url, %album_id, "GET album metadata");
         self.get_json(&url).await
     }
 
