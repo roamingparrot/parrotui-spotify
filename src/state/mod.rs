@@ -417,6 +417,11 @@ pub struct App {
 
     // Settings — takes over the whole frame while open
     pub settings: Option<SettingsState>,
+
+    // Set once the first playback-state refresh has been used to try opening
+    // the currently-playing track's origin (playlist/album) on startup, so
+    // later periodic refreshes don't keep yanking the content view back.
+    pub startup_now_playing_checked: bool,
 }
 
 impl App {
@@ -466,6 +471,7 @@ impl App {
             search: None,
             search_origin: false,
             settings: None,
+            startup_now_playing_checked: false,
         };
         app.rebuild_sidebar_items();
         app

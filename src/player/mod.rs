@@ -43,6 +43,11 @@ pub enum Action {
         generation: u64,
     },
 
+    // Open the playlist/album the currently-playing track came from (startup only)
+    LoadNowPlayingContext {
+        context_uri: String,
+    },
+
     // Transfer playback to our device, then replay the deferred Spirc action
     TransferAndReplay(Box<Action>),
 
@@ -93,6 +98,18 @@ pub enum ActionResult {
     },
     MoreSidebarAlbums {
         items: Vec<api::Album>,
+        total: u32,
+    },
+    NowPlayingPlaylist {
+        name: String,
+        uri: String,
+        page: api::Page<api::PlaylistItem>,
+    },
+    NowPlayingAlbum {
+        album_name: String,
+        album_uri: String,
+        artist_name: String,
+        tracks: Vec<api::Track>,
         total: u32,
     },
     MorePlaylistTracks {
@@ -393,6 +410,10 @@ async fn run_async(
             Err(e) => ActionResult::Failed { error: e },
         },
 
+        Action::LoadNowPlayingContext { context_uri } => {
+            load_now_playing_context_async(client, &context_uri).await
+        }
+
         Action::LoadMore => load_more_async(ctx, client).await,
 
         Action::Select => select_async(ctx, client, device_id).await,
@@ -515,6 +536,55 @@ fn album_tracks_from_page(page: api::Page<api::AlbumTrack>) -> (Vec<api::Track>,
         })
         .collect();
     (tracks, page.total)
+}
+
+/// Split a `spotify:<kind>:<id>` URI into its kind and id, e.g.
+/// `spotify:playlist:37i9dQZF1` -> `Some(("playlist", "37i9dQZF1"))`.
+fn parse_spotify_uri(uri: &str) -> Option<(&str, &str)> {
+    let mut parts = uri.splitn(3, ':');
+    if parts.next()? != "spotify" {
+        return None;
+    }
+    let kind = parts.next()?;
+    let id = parts.next()?;
+    Some((kind, id))
+}
+
+/// Given a `spotify:playlist:ID` or `spotify:album:ID` context URI, fetch
+/// enough to open it as a content view. Other context types (artist radio,
+/// podcasts, liked songs, ads) aren't opened — there's nowhere to send them.
+async fn load_now_playing_context_async(client: &SpotifyClient, context_uri: &str) -> ActionResult {
+    match parse_spotify_uri(context_uri) {
+        Some(("playlist", id)) => match client.playlist_metadata(id).await {
+            Ok(pl) => match client.playlist_tracks(id, PAGE_SIZE, 0).await {
+                Ok(page) => ActionResult::NowPlayingPlaylist {
+                    name: pl.name,
+                    uri: pl.uri,
+                    page,
+                },
+                Err(e) => ActionResult::Failed { error: e },
+            },
+            Err(e) => ActionResult::Failed { error: e },
+        },
+        Some(("album", id)) => match client.album_metadata(id).await {
+            Ok(album) => match client.album_tracks(id, PAGE_SIZE, 0).await {
+                Ok(page) => {
+                    let (tracks, total) = album_tracks_from_page(page);
+                    let artist_name = album.artist_names();
+                    ActionResult::NowPlayingAlbum {
+                        album_name: album.name,
+                        album_uri: album.uri,
+                        artist_name,
+                        tracks,
+                        total,
+                    }
+                }
+                Err(e) => ActionResult::Failed { error: e },
+            },
+            Err(e) => ActionResult::Failed { error: e },
+        },
+        _ => ActionResult::PlaybackStarted,
+    }
 }
 
 async fn load_playlists_async(client: &SpotifyClient) -> Result<(Vec<api::Playlist>, u32)> {
@@ -691,6 +761,21 @@ pub fn apply_result(app: &mut App, result: ActionResult) {
         }
         ActionResult::MoreSidebarAlbums { items, total } => {
             app.append_sidebar_albums(items, total);
+        }
+        ActionResult::NowPlayingPlaylist { name, uri, page } => {
+            // Passive — show where playback came from without stealing
+            // focus from the sidebar the app always starts on.
+            app.set_playlist_tracks(name, uri, page);
+        }
+        ActionResult::NowPlayingAlbum {
+            album_name,
+            album_uri,
+            artist_name,
+            tracks,
+            total,
+        } => {
+            app.set_album_detail(album_name, album_uri, artist_name, tracks, total);
+            app.search_origin = false;
         }
         ActionResult::MorePlaylistTracks { page } => {
             app.append_playlist_tracks(page);
@@ -1008,13 +1093,7 @@ fn copy_link(app: &mut App) {
 
 fn spotify_uri_to_url(uri: &str) -> Option<String> {
     // spotify:track:ID → https://open.spotify.com/track/ID
-    let mut parts = uri.splitn(3, ':');
-    let prefix = parts.next()?;
-    let kind = parts.next()?;
-    let id = parts.next()?;
-    if prefix != "spotify" {
-        return None;
-    }
+    let (kind, id) = parse_spotify_uri(uri)?;
     Some(format!("https://open.spotify.com/{kind}/{id}"))
 }
 
@@ -1025,4 +1104,81 @@ fn set_clipboard(text: &str) -> bool {
     let encoded = base64::engine::general_purpose::STANDARD.encode(text);
     let mut out = std::io::stdout();
     write!(out, "\x1b]52;c;{encoded}\x1b\\").is_ok() && out.flush().is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::input::Keymap;
+
+    fn app() -> App {
+        App::new(Config::default(), Keymap::default(), "device".to_string())
+    }
+
+    #[test]
+    fn parses_playlist_and_album_context_uris() {
+        assert_eq!(
+            parse_spotify_uri("spotify:playlist:37i9dQZF1"),
+            Some(("playlist", "37i9dQZF1"))
+        );
+        assert_eq!(
+            parse_spotify_uri("spotify:album:abc123"),
+            Some(("album", "abc123"))
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_or_non_spotify_uris() {
+        assert_eq!(parse_spotify_uri("not-a-uri"), None);
+        assert_eq!(parse_spotify_uri("spotify:playlist"), None);
+        assert_eq!(parse_spotify_uri("other:playlist:37i9dQZF1"), None);
+    }
+
+    #[test]
+    fn now_playing_playlist_opens_without_stealing_sidebar_focus() {
+        let mut app = app();
+        let result = ActionResult::NowPlayingPlaylist {
+            name: "Chill Vibes".to_string(),
+            uri: "spotify:playlist:1".to_string(),
+            page: api::Page {
+                items: vec![],
+                total: 0,
+                offset: 0,
+                limit: 50,
+            },
+        };
+
+        apply_result(&mut app, result);
+
+        assert!(matches!(
+            app.content,
+            ContentView::PlaylistDetail { ref playlist_name, .. } if playlist_name == "Chill Vibes"
+        ));
+        assert_eq!(app.focus, FocusPanel::Sidebar, "should not steal focus");
+    }
+
+    #[test]
+    fn now_playing_album_opens_without_marking_search_origin() {
+        let mut app = app();
+        let result = ActionResult::NowPlayingAlbum {
+            album_name: "OK Computer".to_string(),
+            album_uri: "spotify:album:1".to_string(),
+            artist_name: "Radiohead".to_string(),
+            tracks: vec![],
+            total: 0,
+        };
+
+        apply_result(&mut app, result);
+
+        assert!(matches!(
+            app.content,
+            ContentView::AlbumDetail { ref album_name, .. } if album_name == "OK Computer"
+        ));
+        assert_eq!(app.focus, FocusPanel::Sidebar, "should not steal focus");
+        assert!(
+            !app.search_origin,
+            "opening from startup context isn't a search"
+        );
+    }
 }
