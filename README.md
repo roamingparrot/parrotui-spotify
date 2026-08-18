@@ -49,6 +49,9 @@ INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/roamingpar
 
 ### Quick install (Windows)
 
+Run this from **PowerShell**, not Command Prompt (`irm`/`iex` are PowerShell
+aliases and won't work in `cmd.exe`):
+
 ```powershell
 irm https://raw.githubusercontent.com/roamingparrot/parrotui-spotify/main/install.ps1 | iex
 ```
