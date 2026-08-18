@@ -56,6 +56,14 @@ async fn main() -> color_eyre::Result<()> {
     let mut engine: Option<playback::PlaybackEngine> =
         Some(playback::PlaybackEngine::start(&config).await?);
     let mut player_events = engine.as_ref().unwrap().get_event_channel();
+
+    // Spotify Connect can hand a reconnecting device back an already-playing
+    // session (e.g. if this device_id was left "playing" from a previous
+    // run). Force paused so the app never blasts audio just from launching.
+    if let Err(e) = engine.as_ref().unwrap().pause() {
+        tracing::warn!(%e, "failed to pause playback on startup");
+    }
+
     eprintln!("Device '{}' ready (id: {})", config.device_name, device_id);
 
     let mut app = App::new(config, keymap, device_id.clone());
