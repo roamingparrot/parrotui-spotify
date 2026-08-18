@@ -111,6 +111,28 @@ async fn main() -> color_eyre::Result<()> {
 
         // Drain async action results (non-blocking).
         while let Ok(result) = action_rx.try_recv() {
+            // On the very first playback-state refresh, open the playlist or
+            // album the currently-playing track came from. Gated on a
+            // one-shot flag so later periodic refreshes don't keep resetting
+            // whatever the user has since navigated to.
+            if !app.startup_now_playing_checked
+                && let player::ActionResult::PlaybackState { state } = &result
+            {
+                app.startup_now_playing_checked = true;
+                if let Some(pb) = state
+                    && let Some(context) = &pb.context
+                {
+                    player::dispatch_async(
+                        Action::LoadNowPlayingContext {
+                            context_uri: context.uri.clone(),
+                        },
+                        &app,
+                        client.clone(),
+                        device_id.clone(),
+                        action_tx.clone(),
+                    );
+                }
+            }
             player::apply_result(&mut app, result);
         }
 
