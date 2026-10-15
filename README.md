@@ -1,8 +1,22 @@
 # parrotui-spotify
 
-A keyboard-driven Spotify client for the terminal with built-in playback, built with [ratatui](https://github.com/ratatui/ratatui) and [librespot](https://github.com/librespot-org/librespot).
+> **This project is no longer maintained.**
+>
+> I'm discontinuing parrotui-spotify. It never picked up a regular user base,
+> I've stopped using Spotify myself (I now own my media instead), and I have
+> a busy stretch of school coming up that leaves no time to maintain it.
+>
+> The last release, v0.40.0, is the final one. There will be no more updates,
+> bug fixes or support, and issues and pull requests won't be answered.
+> Spotify changes its protocols from time to time, so the app may stop working
+> without warning.
+>
+> The code is MIT licensed, so you're welcome to fork it and carry it on.
+> Thanks to everyone who tried it out.
+>
+> The repository will be archived shortly.
 
-Part of the **parrotui** family of TUI apps. More TUI clients are on the way — stay tuned.
+A keyboard-driven Spotify client for the terminal with built-in playback, built with [ratatui](https://github.com/ratatui/ratatui) and [librespot](https://github.com/librespot-org/librespot).
 
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
