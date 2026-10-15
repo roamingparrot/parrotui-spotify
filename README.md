@@ -1,4 +1,11 @@
-# parrotui-spotify
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+    <img src="assets/logo.svg" width="120" alt="parrotui-spotify logo: a rounded terminal pane titled with a music note, holding a play symbol and a bar">
+  </picture>
+</p>
+
+<h1 align="center">parrotui-spotify</h1>
 
 > **This project is no longer maintained.**
 >
